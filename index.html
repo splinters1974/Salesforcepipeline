@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pipeline Analysis — Salesforce report viewer</title>
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <header class="app-header">
+    <div class="wrap">
+      <div class="header-copy">
+        <h1>Pipeline Analysis</h1>
+        <p class="subtitle">Upload a Salesforce report (CSV) for a single view of this year and next year's pipeline. Your file never leaves this browser.</p>
+      </div>
+      <span class="brand-badge">🔒 Private · runs entirely in your browser</span>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <!-- Upload -->
+    <section class="upload-section">
+      <div id="dropZone" class="drop-zone">
+        <div class="drop-inner">
+          <strong>Drop your Salesforce CSV here</strong>
+          <span>or</span>
+          <label class="btn">
+            Choose file
+            <input type="file" id="fileInput" accept=".csv,text/csv" hidden />
+          </label>
+          <button type="button" id="loadSampleBtn" class="btn btn-ghost">Load sample data</button>
+        </div>
+      </div>
+      <div id="statusBar" class="status-bar" style="display:none"></div>
+    </section>
+
+    <!-- Column mapping -->
+    <section id="mappingSection" class="card" style="display:none">
+      <h2>Column mapping</h2>
+      <p class="muted">We guessed which columns to use. Correct anything below — fields marked * are required.</p>
+      <div id="mappingPanel" class="mapping-grid"></div>
+    </section>
+
+    <!-- Dashboard -->
+    <section id="dashboard" class="dashboard" style="display:none">
+      <div class="dashboard-controls card">
+        <label class="salesperson-control">👤 Salesperson
+          <select id="salespersonSelect">
+            <option value="">All salespeople</option>
+          </select>
+        </label>
+        <label>Timeline by
+          <select id="granularitySelect">
+            <option value="quarter">Quarter</option>
+            <option value="month">Month</option>
+          </select>
+        </label>
+        <label class="checkbox">
+          <input type="checkbox" id="includeClosedToggle" />
+          Include closed deals (Won/Lost)
+        </label>
+        <div class="export-actions">
+          <button type="button" id="exportCsvBtn" class="btn btn-ghost">Download summary (CSV)</button>
+          <button type="button" id="pdfReportBtn" class="btn">Download PDF report</button>
+          <button type="button" id="resetBtn" class="btn btn-danger">Reset / new file</button>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="filters-card card" id="filtersCard">
+        <div class="filters-row" id="filtersRow"></div>
+        <div class="filters-actions">
+          <span class="muted" id="filtersSummary"></span>
+          <button type="button" id="clearFiltersBtn" class="btn btn-ghost">Clear filters</button>
+        </div>
+      </div>
+
+      <!-- Data Quality (full-width) — populated by renderDataQuality() -->
+      <section class="dq-card card" id="dataQualityCard"></section>
+
+      <!-- Pipeline Health (full-width, current year) -->
+      <section class="health-card card" id="healthCard">
+        <h2>Pipeline Health — <span id="healthYearLabel"></span></h2>
+        <div class="health-panels">
+
+          <div class="health-panel" id="coveragePanel">
+            <h3>Coverage</h3>
+            <label class="target-label"><span id="targetLabelCurrent">Current year</span> target (£)
+              <input type="text" id="targetInput" inputmode="numeric" placeholder="e.g. 2,000,000" />
+            </label>
+            <div id="coverageResult" class="coverage-result"></div>
+            <label class="target-label" style="margin-top:12px"><span id="targetLabelNext">Next year</span> target (£)
+              <input type="text" id="nextTargetInput" inputmode="numeric" placeholder="e.g. 1,500,000" />
+            </label>
+            <div id="coverageResultNext" class="coverage-result"></div>
+          </div>
+
+          <div class="health-panel" id="stalePanel">
+            <h3>Stale deals</h3>
+            <div id="staleSummary" class="stale-summary"></div>
+            <p class="stale-note muted">Deals not amended in more than 6 months.</p>
+          </div>
+
+          <div class="health-panel" id="segmentPanel">
+            <h3>By segment</h3>
+            <div class="chart-holder"><canvas id="segmentChart"></canvas></div>
+          </div>
+
+          <div class="health-panel" id="techPanel">
+            <h3>By technology</h3>
+            <div class="chart-holder"><canvas id="techChart"></canvas></div>
+            <div class="muted" id="techNote"></div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Sales Performance (full-width, current year) -->
+      <section class="perf-card card" id="perfCard">
+        <h2>Sales Performance — <span id="perfYearLabel"></span></h2>
+        <div class="kpi-row">
+          <div class="kpi"><span class="kpi-label">Win rate (by count)</span><span class="kpi-value" id="perfWinRate">—</span><span class="kpi-sub" id="perfWinSub"></span></div>
+          <div class="kpi"><span class="kpi-label">Win rate (by value)</span><span class="kpi-value" id="perfWinRateValue">—</span></div>
+          <div class="kpi"><span class="kpi-label">Avg sales cycle</span><span class="kpi-value" id="perfCycle">—</span><span class="kpi-sub" id="perfCycleSub"></span></div>
+          <div class="kpi"><span class="kpi-label">Pipeline velocity</span><span class="kpi-value" id="perfVelocity">—</span><span class="kpi-sub" id="perfVelocitySub"></span></div>
+        </div>
+      </section>
+
+      <!-- Forecast Outlook (full-width, anchored to the report month) -->
+      <section class="forecast-card card" id="forecastCard">
+        <h2>Forecast Outlook — <span id="fcMonthLabel"></span></h2>
+        <div class="kpi-row">
+          <div class="kpi"><span class="kpi-label">Orders expected this month</span><span class="kpi-value" id="fcOrdersMonth">—</span><span class="kpi-sub" id="fcOrdersMonthSub"></span></div>
+          <div class="kpi"><span class="kpi-label">Likely closes — next 90 days</span><span class="kpi-value" id="fc90">—</span><span class="kpi-sub" id="fc90Sub"></span></div>
+          <div class="kpi"><span class="kpi-label">365-day pipeline</span><span class="kpi-value" id="fc365">—</span><span class="kpi-sub" id="fc365Sub"></span></div>
+          <div class="kpi"><span class="kpi-label">Strategic All Time (£10m+)</span><span class="kpi-value" id="fcStrategic">—</span><span class="kpi-sub" id="fcStrategicSub"></span></div>
+        </div>
+      </section>
+
+      <!-- Pipeline Insights (full-width) -->
+      <section class="insights-card card" id="insightsCard">
+        <h2>Pipeline Insights</h2>
+        <div class="insight-panels">
+
+          <div class="insight-panel" id="agePanel">
+            <h3>Avg age of open opportunities</h3>
+            <div class="big-stat" id="avgAgeStat">—</div>
+            <div class="muted" id="avgAgeSub"></div>
+          </div>
+
+          <div class="insight-panel" id="wonPanel">
+            <h3>Won revenue <span id="wonYearLabel"></span> — by owner</h3>
+            <div class="muted" id="wonTotalLabel"></div>
+            <div class="chart-holder"><canvas id="wonChart"></canvas></div>
+          </div>
+
+          <div class="insight-panel" id="leadPanel">
+            <h3>Lead source mix</h3>
+            <div class="chart-holder"><canvas id="leadChart"></canvas></div>
+            <div class="muted" id="leadNote"></div>
+          </div>
+
+        </div>
+
+        <div class="awarded-list" id="awardedBlock">
+          <h3>Awarded opportunities — <span id="awardedYearLabel"></span></h3>
+          <table class="data-table" id="awardedTable"></table>
+        </div>
+
+        <div class="top-proposed">
+          <h3>Top 10 Opportunities for this Year</h3>
+          <table class="data-table" id="topProposedTable"></table>
+          <div class="add-proposed">
+            <label for="addProposedSelect">Add an opportunity</label>
+            <select id="addProposedSelect"></select>
+            <button type="button" id="addProposedBtn" class="btn btn-ghost">Add</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="year-grid">
+        <!-- Current year column -->
+        <div class="year-col">
+          <h2 class="year-heading current">Current year — <span id="yearLabelCurrent"></span></h2>
+          <div class="kpi-row">
+            <div class="kpi"><span class="kpi-label">Total pipeline</span><span class="kpi-value" id="kpiTotal_current">—</span></div>
+            <div class="kpi"><span class="kpi-label">Weighted forecast</span><span class="kpi-value" id="kpiWeighted_current">—</span></div>
+            <div class="kpi"><span class="kpi-label">Opportunities</span><span class="kpi-value" id="kpiCount_current">—</span></div>
+          </div>
+          <p class="empty-note" id="emptyNote_current" style="display:none">No opportunities close in this year.</p>
+
+          <div class="chart-block">
+            <h3>Value by stage</h3>
+            <div class="chart-holder"><canvas id="stageChart_current"></canvas></div>
+            <table class="data-table" id="stageTable_current"></table>
+          </div>
+
+          <div class="chart-block">
+            <h3>Timeline</h3>
+            <div class="chart-holder"><canvas id="timelineChart_current"></canvas></div>
+          </div>
+
+          <div class="chart-block">
+            <h3>By owner</h3>
+            <div class="chart-holder"><canvas id="ownerChart_current"></canvas></div>
+            <table class="data-table" id="ownerTable_current"></table>
+          </div>
+        </div>
+
+        <!-- Next year column -->
+        <div class="year-col">
+          <h2 class="year-heading next">Following year — <span id="yearLabelNext"></span></h2>
+          <div class="kpi-row">
+            <div class="kpi"><span class="kpi-label">Total pipeline</span><span class="kpi-value" id="kpiTotal_next">—</span></div>
+            <div class="kpi"><span class="kpi-label">Weighted forecast</span><span class="kpi-value" id="kpiWeighted_next">—</span></div>
+            <div class="kpi"><span class="kpi-label">Opportunities</span><span class="kpi-value" id="kpiCount_next">—</span></div>
+          </div>
+          <p class="empty-note" id="emptyNote_next" style="display:none">No opportunities close in this year.</p>
+
+          <div class="chart-block">
+            <h3>Value by stage</h3>
+            <div class="chart-holder"><canvas id="stageChart_next"></canvas></div>
+            <table class="data-table" id="stageTable_next"></table>
+          </div>
+
+          <div class="chart-block">
+            <h3>Timeline</h3>
+            <div class="chart-holder"><canvas id="timelineChart_next"></canvas></div>
+          </div>
+
+          <div class="chart-block">
+            <h3>By owner</h3>
+            <div class="chart-holder"><canvas id="ownerChart_next"></canvas></div>
+            <table class="data-table" id="ownerTable_next"></table>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer wrap">
+    <p>Runs entirely in your browser — no data is uploaded. Weighted forecast = Amount × win probability (or a stage-based estimate when the report has no probability column).</p>
+  </footer>
+
+  <!-- Vendored libraries (offline, no CDN) -->
+  <script src="vendor/papaparse.min.js"></script>
+  <script src="vendor/chart.umd.min.js"></script>
+  <script src="vendor/pdfmake.min.js"></script>
+  <script src="vendor/vfs_fonts.js"></script>
+
+  <!-- App modules (classic scripts so file:// works) -->
+  <script src="js/parse.js"></script>
+  <script src="js/mapping.js"></script>
+  <script src="js/analytics.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/export.js"></script>
+  <script src="js/pdf.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+Opportunity Name,Account Name,Opportunity Owner,Stage,Amount,Probability (%),Close Date,Created Date,Last Modified Date,Lead Source,Next Step,Product Family,Region
+Acme Renewal,Acme Corp,Jane Smith,Proposal/Price Quote,"£120,000",50,15/03/2026,10/09/2025,01/06/2026,Referral,Send revised quote,Commercial Solar PV,EMEA
+Globex Expansion,Globex,John Doe,Awarded,"£85,500",90,22/06/2026,05/01/2026,05/06/2026,Web,Finalise contract,Grid-Scale Battery Storage,EMEA
+Initech Upgrade,Initech,Jane Smith,Qualification,"£40,000",25,10/09/2026,20/02/2026,20/05/2026,Event,Book discovery call,NHS Estate Retrofit,Americas
+Umbrella New Logo,Umbrella Inc,Sara Lee,Prospecting,"£200,000",10,05/11/2026,01/03/2026,10/06/2026,Outbound,Qualify budget,Data Centre Cooling,Americas
+Wayne Platform,Wayne Enterprises,John Doe,Closed Won,"£310,000",100,28/02/2026,01/08/2025,28/02/2026,Partner,,Commercial Solar PV,EMEA
+Stark Services,Stark Industries,Sara Lee,Proposal/Price Quote,"£95,000",50,18/05/2026,15/11/2025,30/04/2026,Web,Present proposal to board,City Decarbonisation,APAC
+Soylent Renewal,Soylent Corp,Jane Smith,Awarded,"£60,000",90,30/07/2026,10/12/2025,08/06/2026,Referral,Agree start date,Industrial Energy Efficiency,EMEA
+Hooli Migration,Hooli,Mike Brown,Qualification,"£150,000",25,12/10/2026,05/04/2026,25/05/2026,Event,Technical scoping,Data Centre Cooling,Americas
+Pied Piper Deal,Pied Piper,Mike Brown,Prospecting,"£25,000",10,03/12/2026,20/05/2026,02/06/2026,Web,Intro meeting,Local Authority Street Lighting,Americas
+Vehement Upsell,Vehement Capital,Sara Lee,Closed Lost,"£70,000",0,19/04/2026,01/10/2025,19/04/2026,Outbound,,Public Sector Heat Networks,APAC
+Acme Phase 2,Acme Corp,Jane Smith,Proposal/Price Quote,"£140,000",50,14/02/2027,02/01/2026,09/06/2026,Referral,Negotiate terms,Commercial Solar PV,EMEA
+Globex Platform,Globex,John Doe,Qualification,"£90,000",25,25/05/2027,15/03/2026,01/06/2026,Web,Confirm requirements,Grid-Scale Battery Storage,EMEA
+Initech Services,Initech,Mike Brown,Prospecting,"£55,000",10,08/08/2027,01/05/2026,03/06/2026,Partner,Send intro deck,Industrial Energy Efficiency,Americas
+Umbrella Renewal,Umbrella Inc,Sara Lee,Awarded,"£180,000",90,16/03/2027,10/01/2026,07/06/2026,Event,Sign renewal,Data Centre Cooling,Americas
+Stark Expansion,Stark Industries,John Doe,Proposal/Price Quote,"£220,000",50,21/09/2027,20/02/2026,04/06/2026,Outbound,Site survey,City Decarbonisation,APAC
+Soylent Upgrade,Soylent Corp,Jane Smith,Qualification,"£48,000",25,11/11/2027,05/05/2026,28/05/2026,Web,Scope upgrade,NHS Estate Retrofit,EMEA
+Wayne Services,Wayne Enterprises,Mike Brown,Prospecting,"£130,000",10,02/06/2027,12/04/2026,06/06/2026,Referral,Discovery workshop,Local Authority Street Lighting,EMEA
+Hooli Support,Hooli,Sara Lee,Proposal/Price Quote,"£75,000",50,29/01/2027,15/12/2025,05/06/2026,Web,Finalise SOW,Public Sector Heat Networks,Americas
+Cyberdyne New Logo,Cyberdyne,John Doe,Closed Won,"£500,000",100,30/07/2027,01/02/2026,01/06/2026,Partner,,Grid-Scale Battery Storage,APAC
+Tyrell Platform,Tyrell Corp,Mike Brown,Awarded,"£160,000",90,12/12/2027,20/01/2026,02/06/2026,Event,Kickoff planning,Data Centre Cooling,EMEA
+Old Deal 2025,Legacy Co,Jane Smith,Closed Won,"£90,000",100,10/05/2025,01/01/2025,10/05/2025,Referral,,Commercial Solar PV,EMEA
+Stale Lead 2025,Old Account,John Doe,Prospecting,"£30,000",10,15/08/2025,01/06/2025,15/08/2025,Outbound,Re-engage,Industrial Energy Efficiency,Americas
+Nexus Renewal,Nexus Ltd,Sara Lee,Qualification,"£65,000",25,07/04/2026,10/10/2025,15/03/2026,Web,Chase decision,NHS Estate Retrofit,APAC
+Oscorp Upsell,Oscorp,Mike Brown,Proposal/Price Quote,"£110,000",50,23/10/2026,01/04/2026,09/06/2026,Event,Pricing approval,Commercial Solar PV,Americas
+Massive Dynamic,Massive Dynamic,Jane Smith,Negotiation/Review,"£240,000",75,19/03/2027,15/01/2026,08/06/2026,Referral,Legal review,Data Centre Cooling,EMEA
+Aperture Deal,Aperture Science,John Doe,Prospecting,"£45,000",10,28/06/2026,01/05/2026,10/06/2026,Web,Qualify,City Decarbonisation,EMEA
+Gekko Capital,Gekko Co,Sara Lee,Qualification,"£80,000",25,14/09/2027,20/03/2026,04/06/2026,Outbound,Needs analysis,Public Sector Heat Networks,APAC
+Wonka Platform,Wonka Industries,Mike Brown,Proposal/Price Quote,"£175,000",50,05/02/2026,01/09/2025,20/01/2026,Partner,Awaiting PO,Grid-Scale Battery Storage,Americas
+Duff Expansion,Duff Brewing,Jane Smith,Closed Won,"£135,000",100,17/11/2026,01/03/2026,01/06/2026,Web,,Industrial Energy Efficiency,EMEA
+Monarch New Logo,Monarch Inc,John Doe,Prospecting,"£300,000",10,26/05/2027,01/04/2026,26/05/2026,Event,Exec sponsor meeting,Data Centre Cooling,APAC
