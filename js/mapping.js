@@ -41,7 +41,12 @@
     { key: 'region', label: 'Region', required: false,
       hints: ['region', 'territory', 'segment', 'area', 'geo', 'market'] },
     { key: 'name', label: 'Opportunity Name', required: false,
-      hints: ['opportunity name', 'opportunity', 'name', 'deal name'] }
+      hints: ['opportunity name', 'opportunity', 'name', 'deal name'] },
+    // Used only to match the same deal across two reports. Deliberately
+    // narrow hints — a bare "id" would happily claim columns like "Bid Value".
+    { key: 'oppId', label: 'Opportunity ID', required: false,
+      hints: ['opportunity id', 'opp id', 'record id', 'salesforce id',
+              'opportunity record id', 'opportunity 18 digit id'] }
   ];
 
   function norm(s) {

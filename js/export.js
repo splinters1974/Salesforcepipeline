@@ -156,6 +156,40 @@
       rows.push([]);
     }
 
+    // Movement since the previous report.
+    var cmp = meta.comparison;
+    if (cmp) {
+      rows.push(['Report comparison']);
+      rows.push(['Previous report', cmp.prevDate, cmp.prevLabel || '']);
+      rows.push(['This report', cmp.currDate, cmp.currLabel || '']);
+      rows.push(['Days between reports', cmp.daysBetween == null ? 'n/a' : cmp.daysBetween]);
+      rows.push([]);
+
+      rows.push(['Movement', 'Previous', 'This report', 'Change']);
+      rows.push(['Open opportunities', cmp.count.prev, cmp.count.curr, cmp.count.delta]);
+      rows.push(['Total pipeline', num(cmp.total.prev), num(cmp.total.curr), num(cmp.total.delta)]);
+      rows.push(['Weighted forecast', num(cmp.weighted.prev), num(cmp.weighted.curr), num(cmp.weighted.delta)]);
+      rows.push([]);
+
+      // Each movement list gets the same shape so the CSV stays easy to pivot.
+      [['Closed won since previous report', cmp.closedWon, cmp.closedWonTotal],
+       ['Closed lost since previous report', cmp.closedLost, cmp.closedLostTotal],
+       ['New since previous report', cmp.added, cmp.addedTotal],
+       ['No longer in the report', cmp.removed, cmp.removedTotal]
+      ].forEach(function (block) {
+        rows.push([block[0], 'Owner', 'Value', 'Close date', 'Stage']);
+        if (!block[1].length) {
+          rows.push(['(none)']);
+        } else {
+          block[1].forEach(function (o) {
+            rows.push([o.name, o.owner, num(o.amount), o.closeDate || '', o.stage]);
+          });
+          rows.push(['Total', '', num(block[2]), block[1].length + ' deals', '']);
+        }
+        rows.push([]);
+      });
+    }
+
     return rows.map(function (row) {
       return row.map(csvEscape).join(',');
     }).join('\r\n');

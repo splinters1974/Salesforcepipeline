@@ -31,6 +31,7 @@ if (!sandbox.Papa && sandbox.module && sandbox.module.exports) sandbox.Papa = sa
 
 load('js/parse.js');
 load('js/analytics.js');
+load('js/compare.js');
 load('js/export.js');
 load('js/pdf.js');
 
@@ -517,6 +518,170 @@ docHas('top 10 heading', 'Top 10 Opportunities for this Year');
 docHas('segments/stale page', 'Segments & Stale deals — 2026');
 const foot = doc.footer(2, 3);
 eq('pdf footer shows page numbers', JSON.stringify(foot).indexOf('2 / 3') !== -1, true);
+
+// ---- Report-to-report comparison ----
+const snapOpts = (date) => ({ currentYear: 2026, dayFirst: true, reportDate: date });
+const clone = (rows) => JSON.parse(JSON.stringify(rows));
+
+const prevSnap = PA.compare.buildSnapshot(table.rows, mapping, snapOpts('2026-06-12'));
+
+// Headline totals span both years of open pipeline, matching the dashboard.
+eq('snapshot open count = both years', prevSnap.count,
+   res.years[2026].count + res.years[2027].count);
+approx('snapshot total = both years', prevSnap.total,
+   res.years[2026].total + res.years[2027].total);
+eq('snapshot carries report date', prevSnap.reportDate, '2026-06-12');
+eq('snapshot keys fall back to name', prevSnap.opps[0].key.slice(0, 3), 'nm:');
+
+// A later report where Acme Renewal (£120k, Jane Smith, Proposal) has been won.
+const wonRows = clone(table.rows);
+const acme = wonRows.find(r => r['Opportunity Name'] === 'Acme Renewal');
+acme['Stage'] = 'Closed Won';
+const wonSnap = PA.compare.buildSnapshot(wonRows, mapping, snapOpts('2026-08-02'));
+const wonDiff = PA.compare.diffSnapshots(prevSnap, wonSnap);
+
+eq('diff reports both dates', wonDiff.prevDate + ' -> ' + wonDiff.currDate,
+   '2026-06-12 -> 2026-08-02');
+eq('diff days between reports', wonDiff.daysBetween, 51);
+eq('closed-won list length', wonDiff.closedWon.length, 1);
+eq('closed-won names the opportunity', wonDiff.closedWon[0].name, 'Acme Renewal');
+eq('closed-won carries the owner', wonDiff.closedWon[0].owner, 'Jane Smith');
+approx('closed-won carries the value', wonDiff.closedWon[0].amount, 120000);
+approx('closed-won keeps prior weighted', wonDiff.closedWon[0].weighted, 60000);
+approx('closed-won total', wonDiff.closedWonTotal, 120000);
+eq('closed-lost empty', wonDiff.closedLost.length, 0);
+
+// Winning a deal takes it out of open pipeline: count -1, value -£120k.
+eq('count delta after a win', wonDiff.count.delta, -1);
+approx('total delta after a win', wonDiff.total.delta, -120000);
+approx('weighted delta after a win', wonDiff.weighted.delta, -60000);
+eq('count movement keeps both sides', wonDiff.count.prev - wonDiff.count.curr, 1);
+
+// A lost deal is reported separately from a won one.
+const lostRows = clone(table.rows);
+lostRows.find(r => r['Opportunity Name'] === 'Acme Renewal')['Stage'] = 'Closed Lost';
+const lostDiff = PA.compare.diffSnapshots(
+  prevSnap, PA.compare.buildSnapshot(lostRows, mapping, snapOpts('2026-08-02')));
+eq('closed-lost list length', lostDiff.closedLost.length, 1);
+eq('closed-lost not counted as won', lostDiff.closedWon.length, 0);
+approx('closed-lost total', lostDiff.closedLostTotal, 120000);
+
+// Awarded is open pipeline in this app, so it must not read as a closure.
+const awardedRows = clone(table.rows);
+awardedRows.find(r => r['Opportunity Name'] === 'Acme Renewal')['Stage'] = 'Awarded';
+const awardedDiff = PA.compare.diffSnapshots(
+  prevSnap, PA.compare.buildSnapshot(awardedRows, mapping, snapOpts('2026-08-02')));
+eq('awarded is not a closure', awardedDiff.closedWon.length + awardedDiff.closedLost.length, 0);
+
+// New opportunity appearing in the later report.
+const addedRows = clone(table.rows);
+addedRows.push(synthRow('Nia Patel', 'Discovery', '£90,000', '10/10/2026'));
+const addedDiff = PA.compare.diffSnapshots(
+  prevSnap, PA.compare.buildSnapshot(addedRows, mapping, snapOpts('2026-08-02')));
+eq('new opportunity detected', addedDiff.added.length, 1);
+eq('new opportunity named', addedDiff.added[0].name, 'Nia Patel Discovery');
+approx('added total', addedDiff.addedTotal, 90000);
+eq('count delta after an addition', addedDiff.count.delta, 1);
+
+// An opportunity that vanished from the export entirely.
+const droppedRows = clone(table.rows).filter(r => r['Opportunity Name'] !== 'Acme Renewal');
+const droppedDiff = PA.compare.diffSnapshots(
+  prevSnap, PA.compare.buildSnapshot(droppedRows, mapping, snapOpts('2026-08-02')));
+eq('removed opportunity detected', droppedDiff.removed.length, 1);
+eq('removed opportunity named', droppedDiff.removed[0].name, 'Acme Renewal');
+eq('removed is not reported as closed', droppedDiff.closedWon.length, 0);
+
+// Reassigning an owner must not read as one deal leaving and another arriving.
+const reassignedRows = clone(table.rows);
+reassignedRows.find(r => r['Opportunity Name'] === 'Acme Renewal')['Opportunity Owner'] = 'Mike Brown';
+const reassignedDiff = PA.compare.diffSnapshots(
+  prevSnap, PA.compare.buildSnapshot(reassignedRows, mapping, snapOpts('2026-08-02')));
+eq('owner change keeps the deal matched',
+   reassignedDiff.added.length + reassignedDiff.removed.length, 0);
+
+// Identical reports show no movement at all.
+const sameDiff = PA.compare.diffSnapshots(
+  prevSnap, PA.compare.buildSnapshot(table.rows, mapping, snapOpts('2026-08-02')));
+eq('identical reports: no closures', sameDiff.closedWon.length + sameDiff.closedLost.length, 0);
+eq('identical reports: no additions', sameDiff.added.length, 0);
+eq('identical reports: no removals', sameDiff.removed.length, 0);
+eq('identical reports: zero count delta', sameDiff.count.delta, 0);
+approx('identical reports: zero value delta', sameDiff.total.delta, 0);
+
+// Matching by Opportunity ID survives a rename that name-matching would miss.
+const idMapping = Object.assign({}, mapping, { oppId: 'Opportunity ID' });
+const withIds = clone(table.rows).map((r, i) => Object.assign(r, { 'Opportunity ID': 'OPP' + i }));
+const renamed = clone(withIds);
+renamed[0]['Opportunity Name'] = 'Acme Renewal (renegotiated)';
+const idPrev = PA.compare.buildSnapshot(withIds, idMapping, snapOpts('2026-06-12'));
+const idDiff = PA.compare.diffSnapshots(
+  idPrev, PA.compare.buildSnapshot(renamed, idMapping, snapOpts('2026-08-02')));
+eq('id matching uses the id key', idPrev.opps[0].key, 'id:opp0');
+eq('renamed deal stays matched by id', idDiff.added.length + idDiff.removed.length, 0);
+
+// Snapshot history: newest last, same-date reloads replace, capped.
+let hist = [];
+hist = PA.compare.addSnapshot(hist, { reportDate: '2026-06-12', count: 1 });
+hist = PA.compare.addSnapshot(hist, { reportDate: '2026-08-02', count: 2 });
+eq('history keeps both snapshots', hist.length, 2);
+eq('history is oldest-first', hist[0].reportDate, '2026-06-12');
+hist = PA.compare.addSnapshot(hist, { reportDate: '2026-08-02', count: 99 });
+eq('same-date reload replaces', hist.length, 2);
+eq('same-date reload keeps newest values', hist[1].count, 99);
+hist = PA.compare.addSnapshot(hist, { reportDate: '2026-07-01', count: 3 });
+eq('out-of-order snapshot sorts in', hist[1].reportDate, '2026-07-01');
+eq('previous snapshot is the one before',
+   PA.compare.previousSnapshot(hist, { reportDate: '2026-08-02' }).reportDate, '2026-07-01');
+eq('no previous before the earliest',
+   PA.compare.previousSnapshot(hist, { reportDate: '2026-01-01' }), null);
+let capped = [];
+for (let i = 0; i < PA.compare.MAX_SNAPSHOTS + 5; i++) {
+  capped = PA.compare.addSnapshot(capped, { reportDate: '2026-01-' + String(i + 1).padStart(2, '0') });
+}
+eq('history capped', capped.length, PA.compare.MAX_SNAPSHOTS);
+
+eq('diff needs both snapshots', PA.compare.diffSnapshots(null, prevSnap), null);
+
+// Comparison reaches both exports.
+const cmpCsv = PA.export.buildSummaryCsv(res, health, ins, {
+  generated: '2026-08-02', comparison: wonDiff
+});
+const csvHasCmp = (label, needle) =>
+  eq('comparison csv contains ' + label, cmpCsv.indexOf(needle) !== -1, true);
+csvHasCmp('section header', 'Report comparison');
+csvHasCmp('previous report date', 'Previous report,2026-06-12');
+csvHasCmp('this report date', 'This report,2026-08-02');
+csvHasCmp('days between', 'Days between reports,51');
+csvHasCmp('movement header', 'Movement,Previous,This report,Change');
+csvHasCmp('opportunity movement', 'Open opportunities,24,23,-1');
+csvHasCmp('closed won block', 'Closed won since previous report');
+csvHasCmp('closed won deal', 'Acme Renewal,Jane Smith,120000');
+csvHasCmp('closed lost block', 'Closed lost since previous report');
+csvHasCmp('empty list marked', '(none)');
+eq('summary csv omits comparison when absent',
+   PA.export.buildSummaryCsv(res, health, ins, { generated: 'x' }).indexOf('Report comparison'), -1);
+
+const cmpDoc = PA.pdf.buildDocDefinition({
+  results: res, health: health, insights: ins, proposed: ins.topProposed,
+  performance: perf, forecast: fcLow, comparison: wonDiff, images: {},
+  meta: { generated: '2026-08-02' }
+});
+const cmpJson = JSON.stringify(cmpDoc.content);
+const docHasCmp = (label, needle) =>
+  eq('comparison pdf contains ' + label, cmpJson.indexOf(needle) !== -1, true);
+docHasCmp('comparison page', 'Report Comparison');
+docHasCmp('both report dates', '12 Jun 2026');
+docHasCmp('days apart', '51 days apart');
+docHasCmp('closed won heading', 'Closed won since the previous report');
+docHasCmp('closed lost heading', 'Closed lost since the previous report');
+docHasCmp('closed won deal', 'Acme Renewal');
+docHasCmp('signed movement', '-1 vs 24');
+eq('comparison adds a 4th page',
+   cmpDoc.content.filter(b => b && b.pageBreak === 'before').length, 3);
+eq('pdf omits comparison page when absent',
+   JSON.stringify(PA.pdf.buildDocDefinition({
+     results: res, health: health, insights: ins, proposed: [], images: {}, meta: {}
+   }).content).indexOf('Report Comparison'), -1);
 
 console.log('\n' + (failures === 0 ? 'ALL TESTS PASSED' : failures + ' TEST(S) FAILED'));
 process.exit(failures === 0 ? 0 : 1);

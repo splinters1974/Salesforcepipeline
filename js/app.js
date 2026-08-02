@@ -25,11 +25,19 @@
   PA.format = { currency: currency, compact: compact };
 
   var STORAGE_KEY = 'pipelineAnalysis.v1';
+  // Snapshot history lives under its own key so a dataset too large to persist
+  // never costs you the baselines you compare against.
+  var SNAPSHOT_KEY = 'pipelineAnalysis.snapshots.v1';
 
   var state = {
     table: null,        // { headers, rows }
     mapping: null,
     results: null,
+    snapshot: null,      // this report's snapshot, rebuilt on every recompute
+    snapshots: [],       // stored history of earlier reports, oldest first
+    reportDate: '',      // ISO date this report was run (defaults to the file's date)
+    reportLabel: '',     // source filename, shown alongside the dates
+    baselineDate: '',    // chosen baseline; '' = most recent earlier report
     timelineGranularity: 'quarter',
     includeClosed: false,
     target: '',          // current-year coverage target (raw text)
@@ -70,6 +78,11 @@
     el.addProposedSelect = $('addProposedSelect');
     el.addProposedBtn = $('addProposedBtn');
     el.yearLabels = { current: $('yearLabelCurrent'), next: $('yearLabelNext') };
+    el.compareCard = $('compareCard');
+    el.compareBody = $('compareBody');
+    el.reportDateInput = $('reportDateInput');
+    el.baselineSelect = $('baselineSelect');
+    el.baselineFileInput = $('baselineFileInput');
 
     el.fileInput.addEventListener('change', function (e) {
       if (e.target.files && e.target.files[0]) loadFile(e.target.files[0]);
@@ -142,9 +155,26 @@
       recompute(); render(); saveState();
     });
 
+    // ---- Report comparison controls ----
+    // Re-dating the report changes which stored snapshot counts as "previous",
+    // so rebuild the snapshot and redraw.
+    el.reportDateInput.addEventListener('change', function () {
+      if (!el.reportDateInput.value) return;
+      state.reportDate = el.reportDateInput.value;
+      recompute(); render(); saveState();
+    });
+    el.baselineSelect.addEventListener('change', function () {
+      state.baselineDate = el.baselineSelect.value;
+      renderComparison(); saveState();
+    });
+    el.baselineFileInput.addEventListener('change', function (e) {
+      if (e.target.files && e.target.files[0]) loadBaselineFile(e.target.files[0]);
+    });
+
     // Charts don't reflow for print on their own — resize them first.
     window.addEventListener('beforeprint', function () { PA.charts.resizeAll(); });
 
+    restoreSnapshots();
     restoreState();
   }
 
@@ -163,6 +193,13 @@
       new Date(), { filters: state.filters });
   }
 
+  // Movement since the previous report, for the exports. Null when there is no
+  // earlier report to measure against.
+  function currentComparison() {
+    if (!state.snapshot) return null;
+    return PA.compare.diffSnapshots(baselineSnapshot(state.snapshot), state.snapshot);
+  }
+
   // Slug for filenames, e.g. "Jane Smith" -> "-jane-smith" (empty for everyone).
   function personSlug() {
     var p = selectedPerson();
@@ -176,7 +213,8 @@
       performance: currentPerformance(),
       forecast: currentForecast(),
       filterSummary: filterSummaryText(),
-      person: selectedPerson()
+      person: selectedPerson(),
+      comparison: currentComparison()
     });
     downloadFile('pipeline-analysis' + personSlug() + '-' + new Date().toISOString().slice(0, 10) + '.csv',
       csv, 'text/csv;charset=utf-8');
@@ -222,6 +260,7 @@
       proposed: computeShownProposed(ins).shown,
       performance: currentPerformance(),
       forecast: currentForecast(),
+      comparison: currentComparison(),
       images: {
         stageCurrent: PA.charts.getImage('stageChart_current'),
         stageNext: PA.charts.getImage('stageChart_next'),
@@ -261,12 +300,61 @@
     el.status.style.display = msg ? 'block' : 'none';
   }
 
+  /*
+   * The date a report was taken. A Salesforce export's file timestamp is the
+   * moment it was run, which is exactly what we want; fall back to today for
+   * pasted or generated data. Local Y/M/D is carried over verbatim so the date
+   * shown matches the one on the user's own file listing.
+   */
+  function fileDateIso(file) {
+    var d = (file && file.lastModified) ? new Date(file.lastModified) : new Date();
+    return PA.compare.toIso(new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())));
+  }
+
   function loadFile(file) {
     setStatus('Reading ' + file.name + ' …', 'info');
     PA.parse.readFile(file).then(function (table) {
-      onTableLoaded(table);
+      onTableLoaded(table, false, { name: file.name, date: fileDateIso(file) });
     }).catch(function (err) {
       setStatus('Could not read file: ' + err.message, 'error');
+    });
+  }
+
+  /*
+   * Load an earlier export purely as a comparison baseline — it is mapped and
+   * snapshotted on its own, then stored in the history, but never becomes the
+   * dashboard's dataset.
+   */
+  function loadBaselineFile(file) {
+    setStatus('Reading previous report ' + file.name + ' …', 'info');
+    PA.parse.readFile(file).then(function (t) {
+      if (!t.headers.length || !t.rows.length) {
+        setStatus('No data rows found in that previous report.', 'error');
+        return;
+      }
+      var m = PA.mapping.autoDetect(t.headers);
+      var missing = PA.mapping.requiredMissing(m);
+      if (missing.length) {
+        setStatus('That previous report is missing required column(s): ' + missing.join(', '), 'error');
+        return;
+      }
+      var snap = PA.compare.buildSnapshot(t.rows, m, {
+        currentYear: state.currentYear,
+        reportDate: fileDateIso(file),
+        label: file.name
+      });
+      if (state.snapshot && snap.reportDate >= state.snapshot.reportDate) {
+        setStatus('That report is dated ' + fmtIso(snap.reportDate) + ', which is not before this one (' +
+          fmtIso(state.snapshot.reportDate) + '). Adjust the report dates to compare them.', 'warn');
+        return;
+      }
+      state.snapshots = PA.compare.addSnapshot(state.snapshots, snap);
+      state.baselineDate = snap.reportDate;
+      saveSnapshots(); saveState();
+      renderComparison();
+      setStatus('Comparing against ' + file.name + ' (' + fmtIso(snap.reportDate) + ').', 'info');
+    }).catch(function (err) {
+      setStatus('Could not read that previous report: ' + err.message, 'error');
     });
   }
 
@@ -277,14 +365,15 @@
       if (!r.ok) throw new Error('HTTP ' + r.status);
       return r.text();
     }).then(function (text) {
-      onTableLoaded(PA.parse.readText(text));
+      onTableLoaded(PA.parse.readText(text), false,
+        { name: 'sample_pipeline.csv', date: PA.compare.toIso(new Date()) });
     }).catch(function () {
       setStatus('Sample auto-load is blocked when opening via file://. ' +
         'Use the upload button and pick sample/sample_pipeline.csv, or run a local server.', 'error');
     });
   }
 
-  function onTableLoaded(table, restored) {
+  function onTableLoaded(table, restored, meta) {
     if (!table.headers.length || !table.rows.length) {
       setStatus('No data rows found in that file.', 'error');
       return;
@@ -296,6 +385,11 @@
       state.mapping = PA.mapping.autoDetect(table.headers);
       state.proposedRemoved = {};
       state.proposedAdded = [];
+      // A new report dates itself from the file and compares against whatever
+      // stored report came immediately before it.
+      state.reportDate = (meta && meta.date) || PA.compare.toIso(new Date());
+      state.reportLabel = (meta && meta.name) || '';
+      state.baselineDate = '';
     }
     PA.mapping.renderPanel(el.mappingPanel, table.headers, state.mapping, function (m) {
       state.mapping = m;
@@ -321,7 +415,10 @@
         filters: state.filters,
         proposedRemoved: state.proposedRemoved,
         proposedAdded: state.proposedAdded,
-        dayFirst: state.dayFirst
+        dayFirst: state.dayFirst,
+        reportDate: state.reportDate,
+        reportLabel: state.reportLabel,
+        baselineDate: state.baselineDate
       }));
     } catch (e) {
       // Most likely the dataset is too large for localStorage; carry on without
@@ -347,6 +444,9 @@
     state.proposedRemoved = saved.proposedRemoved || {};
     state.proposedAdded = saved.proposedAdded || [];
     state.dayFirst = saved.dayFirst == null ? null : saved.dayFirst;
+    state.reportDate = saved.reportDate || PA.compare.toIso(new Date());
+    state.reportLabel = saved.reportLabel || '';
+    state.baselineDate = saved.baselineDate || '';
 
     // Reflect restored settings in the controls.
     el.granularity.value = state.timelineGranularity;
@@ -357,11 +457,60 @@
     onTableLoaded(saved.table, true);
   }
 
+  // ---- Snapshot history: the baselines this report is compared against ----
+  function saveSnapshots() {
+    try { localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(state.snapshots)); }
+    catch (e) { /* history is a nice-to-have — never break the app over it */ }
+  }
+
+  function restoreSnapshots() {
+    var raw;
+    try { raw = localStorage.getItem(SNAPSHOT_KEY); } catch (e) { return; }
+    if (!raw) return;
+    try {
+      var list = JSON.parse(raw);
+      if (Array.isArray(list)) state.snapshots = list;
+    } catch (e) { /* ignore corrupt history */ }
+  }
+
+  // Record this report so the next one has something to compare against.
+  // addSnapshot replaces any entry with the same date, so re-loading or
+  // re-mapping the same report refreshes its snapshot instead of duplicating it.
+  function rememberCurrentReport() {
+    if (!state.snapshot) return;
+    state.snapshots = PA.compare.addSnapshot(state.snapshots, state.snapshot);
+    saveSnapshots();
+  }
+
+  // The snapshot this report is measured against: an explicitly chosen one
+  // when set, otherwise the most recent report dated before this one.
+  function baselineSnapshot(curr) {
+    if (state.baselineDate) {
+      var picked = state.snapshots.filter(function (s) {
+        return s.reportDate === state.baselineDate && s.reportDate < curr.reportDate;
+      })[0];
+      if (picked) return picked;
+    }
+    return PA.compare.previousSnapshot(state.snapshots, curr);
+  }
+
+  function fmtIso(iso) {
+    var d = PA.compare.fromIso(iso);
+    return d ? fmtDate(d) : (iso || '—');
+  }
+
   function resetAll() {
     try { localStorage.removeItem(STORAGE_KEY); } catch (e) { /* ignore */ }
     state.table = null;
     state.mapping = null;
     state.results = null;
+    // The stored snapshot history deliberately survives a reset — it is the
+    // whole point of the comparison, and you reset precisely to load the next
+    // report that should be measured against it.
+    state.snapshot = null;
+    state.reportDate = '';
+    state.reportLabel = '';
+    state.baselineDate = '';
     state.target = '';
     state.nextTarget = '';
     state.includeClosed = false;
@@ -516,14 +665,25 @@
   }
 
   function recompute() {
-    if (!state.table || !state.mapping) { state.results = null; return; }
+    if (!state.table || !state.mapping) { state.results = null; state.snapshot = null; return; }
     var missing = PA.mapping.requiredMissing(state.mapping);
     if (missing.length) {
       state.results = null;
+      state.snapshot = null;
       setStatus('Map the required column(s): ' + missing.join(', '), 'warn');
       el.dashboard.style.display = 'none';
       return;
     }
+    // Snapshot the whole report — deliberately unfiltered, so a comparison
+    // against an earlier report is never skewed by the filters in force today.
+    state.snapshot = PA.compare.buildSnapshot(state.table.rows, state.mapping, {
+      currentYear: state.currentYear,
+      dayFirst: state.dayFirst == null ? undefined : state.dayFirst,
+      reportDate: state.reportDate || PA.compare.toIso(new Date()),
+      label: state.reportLabel
+    });
+    rememberCurrentReport();
+
     state.results = PA.analytics.analyze(state.table.rows, state.mapping, {
       currentYear: state.currentYear,
       includeClosed: state.includeClosed,
@@ -551,6 +711,7 @@
     el.yearLabels.next.textContent = r.nextYear;
 
     renderDataQuality();
+    renderComparison();
     renderColumn('current', r.years[r.currentYear], r.currentYear);
     renderColumn('next', r.years[r.nextYear], r.nextYear);
     renderHealth();
@@ -894,6 +1055,125 @@
 
   // Pipeline Health card — current year only. Safe to call on its own
   // (e.g. when the target input changes) without re-parsing the CSV.
+  // ---- Report Comparison card ----
+  function renderComparison() {
+    var curr = state.snapshot;
+    if (!curr) { el.compareCard.style.display = 'none'; return; }
+    el.compareCard.style.display = 'block';
+    el.reportDateInput.value = curr.reportDate;
+    populateBaselineOptions(curr);
+
+    var diff = PA.compare.diffSnapshots(baselineSnapshot(curr), curr);
+    if (!diff) {
+      el.compareBody.innerHTML = '<div class="compare-none">' +
+        'No earlier report stored yet — this one has been saved as the baseline (dated <strong>' +
+        escapeHtml(fmtIso(curr.reportDate)) + '</strong>). Load your next export and the movement ' +
+        'since this report will appear here. To compare straight away, use ' +
+        '<strong>Load a previous report (CSV)</strong> above.</div>';
+      return;
+    }
+    el.compareBody.innerHTML = compareDatesHtml(diff) + compareTilesHtml(diff) + compareListsHtml(diff);
+  }
+
+  function populateBaselineOptions(curr) {
+    var older = state.snapshots.filter(function (s) { return s.reportDate < curr.reportDate; });
+    var html = '<option value="">Most recent earlier report</option>';
+    // Newest first — the likeliest pick sits at the top of the list.
+    older.slice().reverse().forEach(function (s) {
+      html += '<option value="' + escapeHtml(s.reportDate) + '"' +
+        (state.baselineDate === s.reportDate ? ' selected' : '') + '>' +
+        escapeHtml(fmtIso(s.reportDate)) + (s.label ? ' — ' + escapeHtml(s.label) : '') +
+        '</option>';
+    });
+    el.baselineSelect.innerHTML = html;
+    el.baselineSelect.disabled = older.length === 0;
+  }
+
+  function compareDatesHtml(d) {
+    var gap = d.daysBetween == null ? ''
+      : '<span class="compare-gap">' + d.daysBetween +
+        (d.daysBetween === 1 ? ' day' : ' days') + ' between reports</span>';
+    function block(label, iso, file) {
+      return '<span class="compare-date-block">' +
+        '<span class="compare-date-label">' + label + '</span>' +
+        '<span class="compare-date-value">' + escapeHtml(fmtIso(iso)) + '</span>' +
+        (file ? '<span class="compare-date-file">' + escapeHtml(file) + '</span>' : '') +
+        '</span>';
+    }
+    return '<div class="compare-dates">' +
+      block('Previous report', d.prevDate, d.prevLabel) +
+      '<span class="compare-arrow">→</span>' +
+      block('This report', d.currDate, d.currLabel) +
+      gap + '</div>';
+  }
+
+  function compareTilesHtml(d) {
+    function tile(label, m, fmt) {
+      var dir = d.daysBetween === null ? 'flat'
+              : m.delta > 0 ? 'up' : (m.delta < 0 ? 'down' : 'flat');
+      var body = m.delta === 0
+        ? '■ No change'
+        : (m.delta > 0 ? '▲ +' : '▼ −') + fmt(Math.abs(m.delta));
+      return '<div class="compare-tile">' +
+        '<span class="compare-tile-label">' + escapeHtml(label) + '</span>' +
+        '<span class="compare-tile-value">' + fmt(m.curr) + '</span>' +
+        '<span class="compare-delta ' + (m.delta === 0 ? 'flat' : dir) + '">' + body + '</span>' +
+        '<span class="compare-tile-from">was ' + fmt(m.prev) + '</span>' +
+        '</div>';
+    }
+    var n = function (v) { return String(v); };
+    return '<div class="compare-tiles">' +
+      tile('Open opportunities', d.count, n) +
+      tile('Total pipeline', d.total, currency) +
+      tile('Weighted forecast', d.weighted, currency) +
+      '</div>';
+  }
+
+  // One movement table: opportunity, owner, value, close date, stage/outcome.
+  function compareMovementHtml(title, pillClass, pillText, list, total, emptyText, outcome) {
+    var head = '<div class="compare-list"><h3>' + escapeHtml(title) +
+      '<span class="compare-pill compare-pill-' + pillClass + '">' + escapeHtml(pillText) + '</span></h3>';
+    if (!list.length) return head + '<p class="compare-empty">' + escapeHtml(emptyText) + '</p></div>';
+
+    var rows = list.map(function (o) {
+      var last = outcome
+        ? '<span class="compare-badge compare-badge-' + outcome + '">' + escapeHtml(o.stage) + '</span>'
+        : escapeHtml(o.stage);
+      return '<tr><td>' + escapeHtml(o.name) + '</td>' +
+        '<td>' + escapeHtml(o.owner) + '</td>' +
+        '<td class="num">' + currency(o.amount) + '</td>' +
+        '<td class="num">' + escapeHtml(fmtIso(o.closeDate)) + '</td>' +
+        '<td>' + last + '</td></tr>';
+    }).join('');
+
+    return head +
+      '<table class="data-table compare-table">' +
+      '<thead><tr><th>Opportunity</th><th>Owner</th><th>Value</th><th>Close date</th><th>Stage</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody>' +
+      '<tfoot><tr class="total-row"><td>Total</td><td></td><td class="num">' + currency(total) +
+      '</td><td class="num">' + list.length + (list.length === 1 ? ' deal' : ' deals') +
+      '</td><td></td></tr></tfoot></table></div>';
+  }
+
+  function compareListsHtml(d) {
+    return compareMovementHtml(
+        'Closed won since the previous report', 'won',
+        d.closedWon.length + ' won', d.closedWon, d.closedWonTotal,
+        'No opportunities were won between these two reports.', 'won') +
+      compareMovementHtml(
+        'Closed lost since the previous report', 'lost',
+        d.closedLost.length + ' lost', d.closedLost, d.closedLostTotal,
+        'No opportunities were lost between these two reports.', 'lost') +
+      compareMovementHtml(
+        'New opportunities since the previous report', 'new',
+        d.added.length + ' new', d.added, d.addedTotal,
+        'No new opportunities appeared between these two reports.', null) +
+      compareMovementHtml(
+        'No longer in the report', 'gone',
+        d.removed.length + ' gone', d.removed, d.removedTotal,
+        'Every opportunity from the previous report is still present.', null);
+  }
+
   function renderHealth() {
     if (!state.results || !state.table || !state.mapping) return;
     var h = currentHealth();

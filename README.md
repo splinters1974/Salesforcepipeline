@@ -44,6 +44,55 @@ transparent so nothing is dropped without you knowing:
   close date would not parse) with its raw values and the reason, so you can fix
   them in the source CSV — or correct the date format — to recover them.
 
+## Report Comparison
+
+A full-width **Report Comparison** card (just below Data Quality) answers
+"what's changed since last time?" — it shows the **date of the previous report
+alongside the date of this one**, how many days apart they are, and then:
+
+- **Open opportunities** — the count now, the change, and what it was.
+- **Total pipeline** and **Weighted forecast** — same treatment, in £.
+- **Closed won since the previous report** — every deal that was open last time
+  and is Closed Won now, listed by **opportunity name, owner, value, close date
+  and stage**, with a total.
+- **Closed lost since the previous report** — the same, for Closed Lost.
+- **New opportunities since the previous report** — deals that weren't in the
+  last export.
+- **No longer in the report** — deals that have vanished from the export
+  entirely. These are listed separately rather than assumed won, since a deal
+  can also disappear because it was deleted or filtered out at source.
+
+### How the dates are decided
+
+Each report is dated from the **CSV file's own timestamp** — for a Salesforce
+export that is the moment you ran it. Override it with the **This report dated**
+box if you need to; the comparison re-runs immediately.
+
+### How reports are matched up
+
+Every time you load a report, a small snapshot of it (one line per opportunity)
+is saved in the browser's localStorage, and the new report is automatically
+compared against **the most recent snapshot dated before it**. So the second
+report you ever load starts showing movement, with nothing to configure. Use
+**Compare against** to measure against any earlier stored report instead.
+
+The very first report has nothing to compare against. To get a comparison
+straight away, use **Load a previous report (CSV)** to feed in last month's
+export — it is snapshotted as a baseline without disturbing the dashboard.
+
+Deals are matched across reports by **Opportunity ID** when your report includes
+one (map it in the column mapping panel — it is used *only* for this), otherwise
+by opportunity name. Matching deliberately ignores the owner, so reassigning a
+deal doesn't read as one deal disappearing and another appearing.
+
+Snapshots are the whole report, **unfiltered**, so a comparison is never skewed
+by whichever dashboard filters happened to be active. The history keeps the last
+12 reports and **survives Reset / new file** — that is the point, since you reset
+precisely to load the next report that should be measured against it.
+
+Both exports carry the comparison: a **Report Comparison page** in the PDF and a
+**Report comparison** section in the summary CSV.
+
 ## Pipeline Insights
 
 A full-width **Pipeline Insights** card (above the year columns) adds:
@@ -70,7 +119,8 @@ charts.
 
 Beyond the required Amount / Close Date / Stage, you can map: Probability, Owner,
 Product, Region, **Last Modified Date** (stale detection), **Created Date** (open
-age), **Next Step** (top-5 list) and **Lead Source** (source mix). Each is
+age), **Next Step** (top-5 list), **Lead Source** (source mix) and **Opportunity
+ID** (matching deals across reports — see *Report Comparison*). Each is
 auto-detected and adjustable in the mapping panel; features that need a column
 they can't find show a short "map this column" hint.
 
@@ -228,6 +278,7 @@ css/styles.css          Styling
 js/parse.js             CSV reading + Salesforce-export cleanup
 js/mapping.js           Column auto-detection + mapping UI
 js/analytics.js         Pipeline calculations (pure, testable)
+js/compare.js           Report snapshots + report-to-report diff (pure, testable)
 js/charts.js            Chart.js render helpers
 js/export.js            Summary CSV builder (pure, testable)
 js/pdf.js               PDF report builder via pdfmake (pure doc-definition)

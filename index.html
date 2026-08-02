@@ -78,6 +78,24 @@
       <!-- Data Quality (full-width) — populated by renderDataQuality() -->
       <section class="dq-card card" id="dataQualityCard"></section>
 
+      <!-- Report Comparison (full-width) — movement since the previous report -->
+      <section class="compare-card card" id="compareCard" style="display:none">
+        <h2>Report Comparison</h2>
+        <div class="compare-controls">
+          <label>This report dated
+            <input type="date" id="reportDateInput" />
+          </label>
+          <label>Compare against
+            <select id="baselineSelect"></select>
+          </label>
+          <label class="btn btn-ghost compare-upload">
+            Load a previous report (CSV)
+            <input type="file" id="baselineFileInput" accept=".csv,text/csv" hidden />
+          </label>
+        </div>
+        <div id="compareBody"></div>
+      </section>
+
       <!-- Pipeline Health (full-width, current year) -->
       <section class="health-card card" id="healthCard">
         <h2>Pipeline Health — <span id="healthYearLabel"></span></h2>
@@ -252,6 +270,7 @@
   <script src="js/parse.js"></script>
   <script src="js/mapping.js"></script>
   <script src="js/analytics.js"></script>
+  <script src="js/compare.js"></script>
   <script src="js/charts.js"></script>
   <script src="js/export.js"></script>
   <script src="js/pdf.js"></script>

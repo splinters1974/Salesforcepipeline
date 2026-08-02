@@ -320,7 +320,134 @@ main { padding: 24px 0 48px; }
 .ms-opt:hover { background: #f3f9ff; }
 .ms-opt input { width: 15px; height: 15px; accent-color: var(--current); }
 
+/* ---- Report Comparison card ---- */
+.compare-card h2::before {
+  content: "";
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius);
+  margin-right: 11px;
+  background: var(--current);
+  flex: none;
+}
+.compare-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.compare-controls label { font-size: 12px; font-weight: 600; color: var(--muted); }
+.compare-controls input[type="date"],
+.compare-controls select {
+  margin-left: 6px;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fff;
+  font-size: 13px;
+  color: var(--ink);
+}
+.compare-upload { color: var(--current); margin-left: auto; cursor: pointer; }
+
+/* Date range banner: previous report -> this report */
+.compare-dates {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: #f0f8ff;
+  border: 1px solid #b8dcf9;
+  border-radius: var(--radius);
+  font-size: 14px;
+}
+.compare-date-block { display: flex; flex-direction: column; gap: 2px; }
+.compare-date-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); font-weight: 700;
+}
+.compare-date-value { font-size: 15px; font-weight: 700; color: var(--brand-dark); }
+.compare-date-file { font-size: 11px; color: var(--muted); }
+.compare-arrow { font-size: 20px; color: var(--current); padding: 0 8px; }
+.compare-gap { margin-left: auto; font-size: 12px; color: var(--muted); font-weight: 600; }
+
+/* Movement tiles */
+.compare-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.compare-tile {
+  background: #fafaf9;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.compare-tile-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); font-weight: 600;
+}
+.compare-tile-value {
+  font-size: 22px; font-weight: 700; color: var(--brand-dark);
+  font-variant-numeric: tabular-nums; letter-spacing: -0.01em;
+}
+.compare-tile-from { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.compare-delta {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+.compare-delta.up { color: var(--green); }
+.compare-delta.down { color: var(--red); }
+.compare-delta.flat { color: var(--muted); }
+
+/* Movement lists (closed / new / gone) */
+.compare-list { margin-bottom: 18px; }
+.compare-list:last-child { margin-bottom: 0; }
+.compare-list h3 {
+  margin: 0 0 10px;
+  font-size: 12px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--muted);
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+}
+.compare-pill {
+  display: inline-block; padding: 1px 9px; border-radius: 999px;
+  font-size: 12px; font-weight: 700;
+}
+.compare-pill-won { background: #dbf6e5; color: var(--green); }
+.compare-pill-lost { background: #fddfdd; color: var(--red); }
+.compare-pill-new { background: #f0f8ff; color: var(--current); }
+.compare-pill-gone { background: #f3f2f2; color: var(--muted); }
+.compare-badge {
+  display: inline-block; padding: 1px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600;
+}
+.compare-badge-won { background: #dbf6e5; color: var(--green); }
+.compare-badge-lost { background: #fddfdd; color: var(--red); }
+/* Owner and stage columns hold text, so keep them left-aligned — qualified with
+   .data-table so these win over its generic "everything after column 1 is
+   right-aligned" rule regardless of source order. */
+.data-table.compare-table th:nth-child(2), .data-table.compare-table td:nth-child(2),
+.data-table.compare-table th:nth-child(5), .data-table.compare-table td:nth-child(5) { text-align: left; }
+.compare-empty { color: var(--muted); font-size: 13px; font-style: italic; margin: 0; }
+.compare-none {
+  padding: 14px 16px; background: #fafaf9; border: 1px solid var(--border-soft);
+  border-radius: var(--radius); color: var(--muted); font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .compare-tiles { grid-template-columns: 1fr; }
+  .compare-upload { margin-left: 0; }
+}
+
 /* Shared section accent bar */
+.compare-card::before,
 .health-card::before,
 .perf-card::before,
 .forecast-card::before,
@@ -705,6 +832,7 @@ main { padding: 24px 0 48px; }
   .dashboard-controls,
   #filtersCard,
   #coveragePanel,
+  .compare-controls,
   .add-proposed,
   .remove-proposed,
   .app-footer { display: none !important; }

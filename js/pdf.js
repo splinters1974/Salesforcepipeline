@@ -196,6 +196,74 @@
       style: 'filterNote' };
   }
 
+  // ---- Report comparison ----
+
+  function signed(v, asMoney) {
+    if (v === 0) return 'no change';
+    var body = asMoney ? money(Math.abs(v)) : String(Math.abs(v));
+    return (v > 0 ? '+' : '-') + body;
+  }
+
+  function comparisonMovementTable(list, total) {
+    var body = [[th('Opportunity'), th('Owner'), th('Value', 'right'), th('Close date', 'right'), th('Stage')]];
+    if (!list.length) {
+      body.push([{ text: 'None.', colSpan: 5, style: 'muted' }, {}, {}, {}, {}]);
+    } else {
+      list.forEach(function (o) {
+        body.push([o.name, o.owner,
+          { text: money(o.amount), alignment: 'right' },
+          { text: fmtDate(PA.compare.fromIso(o.closeDate)), alignment: 'right' },
+          o.stage]);
+      });
+      body.push([
+        { text: 'Total', bold: true }, {},
+        { text: money(total), alignment: 'right', bold: true },
+        { text: list.length + (list.length === 1 ? ' deal' : ' deals'), alignment: 'right', bold: true },
+        {}
+      ]);
+    }
+    return { style: 'tbl', table: { headerRows: 1, widths: ['*', 'auto', 'auto', 'auto', 'auto'], body: body }, layout: TBL_LAYOUT };
+  }
+
+  // A full page: the two report dates, the three headline movements, then the
+  // deal-level lists behind them.
+  function comparisonPage(cmp) {
+    if (!cmp) return [];
+    function moveCell(label, m, asMoney) {
+      var fmt = asMoney ? money : String;
+      return { width: '*', stack: [
+        { text: label, style: 'kpiLabel' },
+        { text: fmt(m.curr), style: 'kpiVal' },
+        { text: signed(m.delta, asMoney) + ' vs ' + fmt(m.prev), style: 'muted', fontSize: 8 }
+      ] };
+    }
+    return [
+      { text: 'Report Comparison', style: 'h1', pageBreak: 'before' },
+      { text: 'Previous report ' + fmtDate(PA.compare.fromIso(cmp.prevDate)) +
+              (cmp.prevLabel ? ' (' + cmp.prevLabel + ')' : '') +
+              '   →   This report ' + fmtDate(PA.compare.fromIso(cmp.currDate)) +
+              (cmp.currLabel ? ' (' + cmp.currLabel + ')' : '') +
+              (cmp.daysBetween == null ? '' : '   ·   ' + cmp.daysBetween + ' days apart'),
+        style: 'sub' },
+      {
+        columns: [
+          moveCell('Open opportunities', cmp.count, false),
+          moveCell('Total pipeline', cmp.total, true),
+          moveCell('Weighted forecast', cmp.weighted, true)
+        ],
+        columnGap: 10, margin: [0, 6, 0, 12]
+      },
+      { text: 'Closed won since the previous report', style: 'h3' },
+      comparisonMovementTable(cmp.closedWon, cmp.closedWonTotal),
+      { text: 'Closed lost since the previous report', style: 'h3' },
+      comparisonMovementTable(cmp.closedLost, cmp.closedLostTotal),
+      { text: 'New opportunities since the previous report', style: 'h3' },
+      comparisonMovementTable(cmp.added, cmp.addedTotal),
+      { text: 'No longer in the report', style: 'h3' },
+      comparisonMovementTable(cmp.removed, cmp.removedTotal)
+    ];
+  }
+
   function buildDocDefinition(p) {
     var r = p.results, h = p.health, ins = p.insights, imgs = p.images || {}, meta = p.meta || {};
     var cur = r.currentYear, nxt = r.nextYear;
@@ -279,7 +347,7 @@
       { text: 'Stale deals — ' + h.stale.count + ' deals', style: 'h3', margin: [0, 8, 0, 4] },
       { text: 'Open deals not amended in more than 6 months · ' + money(h.stale.totalValue) +
         ' total · ' + money(h.stale.weightedValue) + ' weighted', style: 'muted' }
-    ].filter(Boolean);
+    ].concat(comparisonPage(p.comparison)).filter(Boolean);
 
     return {
       pageSize: 'A4',

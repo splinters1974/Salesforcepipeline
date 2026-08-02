@@ -169,6 +169,7 @@
       var product = mapping.product ? (r[mapping.product] || '—') : '—';
       var region = mapping.region ? (r[mapping.region] || '—') : '—';
       var name = mapping.name ? (r[mapping.name] || '') : '';
+      var oppId = mapping.oppId ? (r[mapping.oppId] || '') : '';
       var lastModified = mapping.lastModified
         ? PA.parse.parseDate(r[mapping.lastModified], dayFirst) : null;
       var created = mapping.created
@@ -191,6 +192,7 @@
         product: product,
         region: region,
         name: name,
+        oppId: oppId,
         lastModified: lastModified,
         created: created,
         nextStep: nextStep,
@@ -732,6 +734,7 @@
     performanceMetrics: performanceMetrics,
     forecastMetrics: forecastMetrics,
     applyFilters: applyFilters,
+    isExcludedAwarded: isExcludedAwarded,
     distinctFilterValues: distinctFilterValues,
     coverage: coverage,
     segmentFor: segmentFor,
