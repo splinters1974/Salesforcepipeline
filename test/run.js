@@ -514,7 +514,7 @@ eq('pdf page size A4', doc.pageSize, 'A4');
 eq('pdf footer is a function', typeof doc.footer, 'function');
 eq('pdf content is array', Array.isArray(doc.content), true);
 const pageBreaks = doc.content.filter(b => b && b.pageBreak === 'before').length;
-eq('pdf has 3 pages (2 page-breaks)', pageBreaks, 2);
+eq('pdf has 2 pages (1 page-break)', pageBreaks, 1);
 const docStr = JSON.stringify(doc.content);
 function docHas(label, needle) {
   const ok = docStr.indexOf(needle) !== -1;
@@ -538,10 +538,20 @@ docHas('win rate kpi', 'Win rate (count)');
 docHas('insights page', 'Pipeline Insights — 2026');
 docHas('awarded section', 'Awarded opportunities — 2026');
 docHas('awarded total', 'Total awarded');
-docHas('stale summary line', 'Open deals not amended in more than 6 months');
 docHas('avg age', 'Avg age of open opportunities');
 docHas('top 10 heading', 'Top 10 Opportunities for this Year');
-docHas('segments/stale page', 'Segments & Stale deals — 2026');
+
+// The segment / technology / stale-deals page was dropped from the report;
+// those breakdowns stay on screen only.
+function docLacks(label, needle) {
+  const ok = docStr.indexOf(needle) === -1;
+  console.log((ok ? 'PASS' : 'FAIL') + ' pdf doc omits ' + label);
+  if (!ok) failures++;
+}
+docLacks('the segments/stale page', 'Segments & Stale deals');
+docLacks('the stale summary line', 'Open deals not amended in more than 6 months');
+docLacks('the by-segment table', 'Segment');
+docLacks('the by-technology table', 'Technology');
 const foot = doc.footer(2, 3);
 eq('pdf footer shows page numbers', JSON.stringify(foot).indexOf('2 / 3') !== -1, true);
 
@@ -1128,8 +1138,8 @@ docHasCmp('bridge detail: revaluation', 'Value increased on existing deals');
 eq('bridge is drawn as canvas rects', (cmpJson.match(/"type":"rect"/g) || []).length >= 4, true);
 eq('bridge bars are never negative width',
    (JSON.parse(cmpJson).toString(), (cmpJson.match(/"w":-[\d.]+/g) || []).length), 0);
-eq('comparison adds a 4th page',
-   cmpDoc.content.filter(b => b && b.pageBreak === 'before').length, 3);
+eq('comparison adds a page',
+   cmpDoc.content.filter(b => b && b.pageBreak === 'before').length, 2);
 eq('pdf omits comparison page when absent',
    JSON.stringify(PA.pdf.buildDocDefinition({
      results: res, health: health, insights: ins, proposed: [], images: {}, meta: {}

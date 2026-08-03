@@ -168,22 +168,6 @@
     return { style: 'tbl', table: { headerRows: 1, widths: ['*', 'auto', 'auto', 'auto', '*'], body: body }, layout: TBL_LAYOUT };
   }
 
-  function segmentTable(segments) {
-    var body = [[th('Segment'), th('Pipeline', 'right'), th('Count', 'right')]];
-    segments.forEach(function (s) {
-      body.push([s.key, { text: money(s.total), alignment: 'right' }, { text: String(s.count), alignment: 'right' }]);
-    });
-    return { style: 'tbl', table: { headerRows: 1, widths: ['*', 'auto', 'auto'], body: body }, layout: TBL_LAYOUT };
-  }
-
-  function technologyTable(techs) {
-    var body = [[th('Technology'), th('Pipeline', 'right'), th('Count', 'right')]];
-    (techs || []).slice(0, 10).forEach(function (t) {
-      body.push([t.key, { text: money(t.total), alignment: 'right' }, { text: String(t.count), alignment: 'right' }]);
-    });
-    return { style: 'tbl', table: { headerRows: 1, widths: ['*', 'auto', 'auto'], body: body }, layout: TBL_LAYOUT };
-  }
-
   // One-line data-quality caveat so a shared report carries the same context
   // as the on-screen Data Quality card.
   function dataQualityNote(r) {
@@ -459,29 +443,10 @@
       { text: 'Awarded opportunities — ' + cur, style: 'h3' },
       awardedTable(ins.awarded || [], ins.awardedTotal || 0),
       { text: 'Top 10 Opportunities for this Year', style: 'h3' },
-      proposedTable(p.proposed || []),
+      proposedTable(p.proposed || [])
 
-      // Page 3 — segment + technology + stale
-      { text: 'Segments & Stale deals — ' + cur, style: 'h1', pageBreak: 'before' },
-      { text: 'By segment', style: 'h3' },
-      {
-        columns: [
-          { width: '*', stack: [image(imgs.segment, 250)] },
-          { width: '*', stack: [segmentTable(h.segments)] }
-        ],
-        columnGap: 18
-      },
-      h.hasTechnology ? { text: 'By technology', style: 'h3', margin: [0, 8, 0, 4] } : null,
-      h.hasTechnology ? {
-        columns: [
-          { width: '*', stack: [image(imgs.technology, 250)] },
-          { width: '*', stack: [technologyTable(h.technologies)] }
-        ],
-        columnGap: 18
-      } : null,
-      { text: 'Stale deals — ' + h.stale.count + ' deals', style: 'h3', margin: [0, 8, 0, 4] },
-      { text: 'Open deals not amended in more than 6 months · ' + money(h.stale.totalValue) +
-        ' total · ' + money(h.stale.weightedValue) + ' weighted', style: 'muted' }
+      // The segment / technology / stale-deals page was dropped from the
+      // report. Those breakdowns remain on screen in the Pipeline Health card.
     ].concat(comparisonPage(p.comparison)).filter(Boolean);
 
     return {

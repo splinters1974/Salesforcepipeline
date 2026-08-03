@@ -230,8 +230,15 @@ Two buttons sit in the dashboard controls:
      KPIs, value-by-stage chart + table (with totals), quarterly timeline, and
      by-owner chart + table.
   2. **Page 2** — average age of open opportunities, the two pie charts
-     (won-by-owner, lead source) and the top-10 proposed table.
-  3. **Page 3** — by segment and the stale-deal list.
+     (won-by-owner, lead source), the awarded list and the top-10 table (in
+     your chosen running order).
+  3. **Report Comparison** — the two report dates, the movement in
+     opportunities / pipeline / weighted forecast, the old-vs-new pipeline
+     bridge, and the deal-level movement lists. Only when an earlier report is
+     stored to compare against.
+
+  The **by segment / by technology / stale deals** breakdowns are on screen
+  only (Pipeline Health card) — they are deliberately not in the PDF.
 
   The document is assembled by the pure, testable `PA.pdf.buildDocDefinition`
   in `js/pdf.js`; `js/app.js` captures the chart images and triggers the

@@ -313,9 +313,7 @@
         ownerCurrent: PA.charts.getImage('ownerChart_current'),
         ownerNext: PA.charts.getImage('ownerChart_next'),
         won: PA.charts.getImage('wonChart'),
-        lead: PA.charts.getImage('leadChart'),
-        segment: PA.charts.getImage('segmentChart'),
-        technology: PA.charts.getImage('techChart')
+        lead: PA.charts.getImage('leadChart')
       },
       meta: {
         generated: new Date().toISOString().slice(0, 10),
