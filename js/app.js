@@ -28,6 +28,10 @@
   // Snapshot history lives under its own key so a dataset too large to persist
   // never costs you the baselines you compare against.
   var SNAPSHOT_KEY = 'pipelineAnalysis.snapshots.v1';
+  // The hand-curated Top 10 lives under its own key too. It is small, it is
+  // entered by hand, and it must outlive both a new report and a dataset too
+  // large for the main blob to save.
+  var TOP10_KEY = 'pipelineAnalysis.top10.v1';
 
   var state = {
     table: null,        // { headers, rows }
@@ -79,6 +83,7 @@
     el.addProposedSelect = $('addProposedSelect');
     el.addProposedBtn = $('addProposedBtn');
     el.resetOrderBtn = $('resetOrderBtn');
+    el.clearPicksBtn = $('clearPicksBtn');
     el.yearLabels = { current: $('yearLabelCurrent'), next: $('yearLabelNext') };
     el.compareCard = $('compareCard');
     el.gridScaleCard = $('gridScaleCard');
@@ -146,18 +151,25 @@
       state.proposedRemoved[name] = true;
       state.proposedAdded = state.proposedAdded.filter(function (n) { return n !== name; });
       state.proposedOrder = state.proposedOrder.filter(function (n) { return n !== name; });
-      renderInsights(); saveState();
+      renderInsights(); saveTop10(); saveState();
     });
     el.resetOrderBtn.addEventListener('click', function () {
       state.proposedOrder = [];
-      renderInsights(); saveState();
+      renderInsights(); saveTop10(); saveState();
+    });
+    el.clearPicksBtn.addEventListener('click', function () {
+      state.proposedRemoved = {};
+      state.proposedAdded = [];
+      state.proposedOrder = [];
+      renderInsights(); saveTop10(); saveState();
+      setStatus('Top 10 picks cleared — back to the automatic ranking.', 'info');
     });
     el.addProposedBtn.addEventListener('click', function () {
       var name = el.addProposedSelect.value;
       if (!name) return;
       delete state.proposedRemoved[name];
       if (state.proposedAdded.indexOf(name) === -1) state.proposedAdded.push(name);
-      renderInsights(); saveState();
+      renderInsights(); saveTop10(); saveState();
     });
 
     // Date-format override lives inside the Data Quality card, which is
@@ -190,6 +202,7 @@
     window.addEventListener('beforeprint', function () { PA.charts.resizeAll(); });
 
     restoreSnapshots();
+    restoreTop10();
     restoreState();
   }
 
@@ -293,7 +306,7 @@
     order[i] = order[j];
     order[j] = name;
     state.proposedOrder = order;
-    renderInsights(); saveState();
+    renderInsights(); saveTop10(); saveState();
   }
 
   function generatePdfReport() {
@@ -433,9 +446,8 @@
     // a restored session keeps whatever was saved.
     if (!restored) {
       state.mapping = PA.mapping.autoDetect(table.headers);
-      state.proposedRemoved = {};
-      state.proposedAdded = [];
-      state.proposedOrder = [];
+      // The curated Top 10 deliberately survives a new report: it is entered by
+      // hand, week after week, against the same opportunities.
       // A new report dates itself from the file and compares against whatever
       // stored report came immediately before it.
       state.reportDate = (meta && meta.date) || PA.compare.toIso(new Date());
@@ -464,9 +476,6 @@
         target: state.target,
         nextTarget: state.nextTarget,
         filters: state.filters,
-        proposedRemoved: state.proposedRemoved,
-        proposedAdded: state.proposedAdded,
-        proposedOrder: state.proposedOrder,
         dayFirst: state.dayFirst,
         reportDate: state.reportDate,
         reportLabel: state.reportLabel,
@@ -493,9 +502,6 @@
     state.target = saved.target || '';
     state.nextTarget = saved.nextTarget || '';
     state.filters = Object.assign({ owner: [], region: [], segment: [], stage: [], leadSource: [] }, saved.filters || {});
-    state.proposedRemoved = saved.proposedRemoved || {};
-    state.proposedAdded = saved.proposedAdded || [];
-    state.proposedOrder = saved.proposedOrder || [];
     state.dayFirst = saved.dayFirst == null ? null : saved.dayFirst;
     state.reportDate = saved.reportDate || PA.compare.toIso(new Date());
     state.reportLabel = saved.reportLabel || '';
@@ -508,6 +514,31 @@
     el.nextTargetInput.value = state.nextTarget;
 
     onTableLoaded(saved.table, true);
+  }
+
+  // ---- The hand-curated Top 10 ----
+  function saveTop10() {
+    try {
+      localStorage.setItem(TOP10_KEY, JSON.stringify({
+        removed: state.proposedRemoved,
+        added: state.proposedAdded,
+        order: state.proposedOrder
+      }));
+    } catch (e) {
+      setStatus('Your Top 10 picks could not be saved in this browser.', 'warn');
+    }
+  }
+
+  function restoreTop10() {
+    var raw;
+    try { raw = localStorage.getItem(TOP10_KEY); } catch (e) { return; }
+    if (!raw) return;
+    try {
+      var v = JSON.parse(raw) || {};
+      state.proposedRemoved = v.removed || {};
+      state.proposedAdded = v.added || [];
+      state.proposedOrder = v.order || [];
+    } catch (e) { /* ignore corrupt picks */ }
   }
 
   // ---- Snapshot history: the baselines this report is compared against ----
@@ -569,9 +600,8 @@
     state.includeClosed = false;
     state.timelineGranularity = 'quarter';
     state.filters = { owner: [], region: [], segment: [], stage: [], leadSource: [] };
-    state.proposedRemoved = {};
-    state.proposedAdded = [];
-    state.proposedOrder = [];
+    // The curated Top 10 survives a reset, like the snapshot history —
+    // "Clear my Top 10 picks" is the deliberate way to drop it.
     state.dayFirst = null;
     el.targetInput.value = '';
     el.nextTargetInput.value = '';
@@ -918,6 +948,9 @@
 
     // The "reset order" control only makes sense once the list has been moved.
     el.resetOrderBtn.style.display = state.proposedOrder.length ? '' : 'none';
+    var curated = state.proposedOrder.length || state.proposedAdded.length ||
+      Object.keys(state.proposedRemoved).length;
+    el.clearPicksBtn.style.display = curated ? '' : 'none';
 
     // Populate the "add" dropdown with opportunities not already shown.
     var options = ['<option value="">Select an opportunity…</option>'];
