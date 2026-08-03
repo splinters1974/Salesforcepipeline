@@ -297,8 +297,22 @@
       : [];
     var usable = dims.filter(function (d) { return unsupported.indexOf(d) === -1; });
 
-    var prevOpps = filterOpps(prev.opps || [], opts.filters, usable);
-    var currOpps = filterOpps(curr.opps || [], opts.filters, usable);
+    /*
+     * Drop suppressed owners from BOTH sides at diff time, not just when a
+     * snapshot is built. A baseline stored before someone was added to the
+     * suppression list still contains their deals, and comparing it against a
+     * report that now excludes them would report every one of those deals as
+     * "no longer in the report" — a wave of phantom losses the first time the
+     * list changes. Re-applying it here keeps old history usable.
+     */
+    function dropSuppressed(opps) {
+      return (opps || []).filter(function (o) {
+        return !PA.analytics.isSuppressedOwner(o.owner, opts.suppressOwners);
+      });
+    }
+
+    var prevOpps = filterOpps(dropSuppressed(prev.opps), opts.filters, usable);
+    var currOpps = filterOpps(dropSuppressed(curr.opps), opts.filters, usable);
 
     var prevTotals = totalsFor(prevOpps, prev.currentYear, prev.nextYear);
     var currTotals = totalsFor(currOpps, curr.currentYear, curr.nextYear);

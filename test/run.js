@@ -595,6 +595,21 @@ eq('comparison tiles unmoved by suppressed deals', supDiff.count.delta, 0);
 eq('snapshot excludes suppressed owners',
    supCurr.opps.some(o => SUP.indexOf(o.owner) !== -1), false);
 
+// A baseline stored BEFORE an owner was suppressed must not report all their
+// deals as "no longer in the report" the first time the list changes.
+const staleBaseline = PA.compare.buildSnapshot(table.rows.concat(supRows), mapping,
+  { currentYear: 2026, dayFirst: true, reportDate: '2026-06-12', suppressOwners: [] });
+eq('stale baseline really does hold their deals',
+   staleBaseline.opps.filter(o => SUP.indexOf(o.owner) !== -1).length, 5);
+const staleDiff = PA.compare.diffSnapshots(staleBaseline,
+  PA.compare.buildSnapshot(table.rows, mapping,
+    { currentYear: 2026, dayFirst: true, reportDate: '2026-08-02' }), {});
+eq('suppression is applied retroactively to the baseline', staleDiff.removed.length, 0);
+eq('stale baseline reports no phantom closures', staleDiff.closedWon.length, 0);
+eq('stale baseline tiles ignore suppressed deals', staleDiff.count.delta, 0);
+approx('stale baseline "was" value excludes suppressed deals',
+   staleDiff.total.prev, res.years[2026].total + res.years[2027].total);
+
 // An override list keeps the rule configurable.
 eq('override suppresses someone else',
    PA.analytics.buildRecords(table.rows, mapping, { suppressOwners: ['jane smith'] })
