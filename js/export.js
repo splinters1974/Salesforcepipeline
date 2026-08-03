@@ -125,8 +125,11 @@
       insights.leadSources.forEach(function (o) { rows.push([o.key, o.count, Math.round(o.pct)]); });
       rows.push([]);
 
+      // meta.proposed is the curated list as shown on screen — manual
+      // additions, removals and running order included. Fall back to the
+      // auto-ranked list only when no curated one was supplied.
       rows.push(['Top 10 Opportunities for this Year', 'Value', 'Close date', 'Rating %', 'Next step']);
-      insights.topProposed.forEach(function (it) {
+      (meta.proposed || insights.topProposed).forEach(function (it) {
         rows.push([it.name, num(it.amount), fmtDate(it.closeDate),
           Math.round(it.probability * 100), it.nextStep]);
       });

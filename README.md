@@ -156,8 +156,16 @@ A full-width **Pipeline Insights** card (above the year columns) adds:
   from each lead source.
 - **Top 10 proposed opportunities** — the strongest Proposed-stage deals, ranked
   by a blend of win probability (rating), value and nearest close date, with the
-  Next Step shown. You can **remove** any row (✕) and **add** any other
-  opportunity from the dropdown, so the list is yours to curate.
+  Next Step shown. You can **remove** any row (✕), **add** any other opportunity
+  from the dropdown, and **set the running order** with the ▲ ▼ buttons, so the
+  list is yours to curate.
+
+  The order is numbered, saved with the rest of your session, and used by the
+  **PDF and CSV exports** as well as the screen. Moving a row stores the whole
+  order, so it stays stable as things change around it — anything that appears
+  later (a newly added opportunity, or a deal arriving in the next report) has
+  no place in your order and joins the end in close-date order. **Reset to
+  close-date order** appears once you have moved anything.
 
 Each year's **Value by stage** table also shows a **Total** row (pipeline and
 weighted) at the bottom.

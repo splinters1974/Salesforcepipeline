@@ -479,6 +479,20 @@ has('awarded section', 'Awarded opportunities,Value,Owner');
 has('awarded total row', 'Total awarded,145500,2');
 has('lead source section', 'Lead source,Count,%');
 has('top proposed section', 'Top 10 Opportunities for this Year,Value,Close date,Rating %,Next step');
+
+// The CSV must use the curated list — manual removals, additions and running
+// order — rather than the raw auto-ranked one.
+const curatedList = ins.topProposed.slice().reverse();
+const curatedCsv = PA.export.buildSummaryCsv(res, health, ins, {
+  generated: '2026-08-02', proposed: curatedList
+});
+const csvNames = curatedCsv.slice(curatedCsv.indexOf('Top 10 Opportunities for this Year'))
+  .split(/\r\n/).slice(1).filter(l => l.trim()).map(l => l.split(',')[0].replace(/^"|"$/g, ''));
+eq('csv follows the curated running order',
+   csvNames.slice(0, curatedList.length).join('|'), curatedList.map(o => o.name).join('|'));
+eq('csv falls back to auto ranking when uncurated',
+   PA.export.buildSummaryCsv(res, health, ins, { generated: 'x' })
+     .indexOf(ins.topProposed[0].name) !== -1, true);
 has('filters applied row', 'Filters applied,Salesperson: Jane Smith');
 has('salesperson title', 'Pipeline Analysis summary — Jane Smith');
 has('salesperson row', 'Salesperson,Jane Smith');

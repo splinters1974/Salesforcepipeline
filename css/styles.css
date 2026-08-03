@@ -627,6 +627,28 @@ main { padding: 24px 0 48px; }
   transition: background .1s, border-color .1s;
 }
 .remove-proposed:hover { background: #fef1f0; border-color: var(--red); }
+
+/* Manual running order for the top-10 list */
+.move-proposed {
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--current);
+  border-radius: var(--radius);
+  cursor: pointer;
+  padding: 3px 7px;
+  font-size: 10px;
+  line-height: 1.4;
+  transition: background .1s, border-color .1s;
+}
+.move-proposed:hover:not(:disabled) { background: #f3f9ff; border-color: var(--current); }
+.move-proposed:disabled { color: #c9c7c5; cursor: default; background: #fafaf9; }
+.row-actions { white-space: nowrap; display: flex; gap: 4px; justify-content: flex-end; }
+.data-table td.rank {
+  text-align: right; color: var(--muted); font-weight: 700;
+  font-variant-numeric: tabular-nums; width: 1%;
+}
+#topProposedTable th:first-child { text-align: right; width: 1%; }
+.reorder-hint { margin: 10px 0 0; font-size: 12px; }
 .add-proposed { display: flex; align-items: center; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
 .add-proposed label { font-size: 12px; font-weight: 600; color: var(--muted); }
 .add-proposed select {
@@ -853,6 +875,8 @@ main { padding: 24px 0 48px; }
   .compare-controls,
   .add-proposed,
   .remove-proposed,
+  .move-proposed,
+  .reorder-hint,
   .app-footer { display: none !important; }
   .wrap { max-width: none; padding: 0; }
   .card { box-shadow: none; border-color: #ddd; }

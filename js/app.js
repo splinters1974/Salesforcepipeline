@@ -45,6 +45,7 @@
     filters: { owner: [], region: [], segment: [], stage: [], leadSource: [] },
     proposedRemoved: {}, // {name: true} manually removed from the top-10 list
     proposedAdded: [],   // [name] manually added to the top-10 list
+    proposedOrder: [],   // [name] manual running order; empty = by close date
     dayFirst: null,      // date format override: null=auto, true=D/M/Y, false=M/D/Y
     currentYear: 2026   // overridable; defaults to system year below
   };
@@ -77,6 +78,7 @@
     el.topProposedTable = $('topProposedTable');
     el.addProposedSelect = $('addProposedSelect');
     el.addProposedBtn = $('addProposedBtn');
+    el.resetOrderBtn = $('resetOrderBtn');
     el.yearLabels = { current: $('yearLabelCurrent'), next: $('yearLabelNext') };
     el.compareCard = $('compareCard');
     el.compareBody = $('compareBody');
@@ -130,11 +132,22 @@
 
     // Manual edits to the top-10 proposed list (event delegation: rows redraw).
     el.topProposedTable.addEventListener('click', function (e) {
-      var btn = e.target.closest && e.target.closest('.remove-proposed');
+      if (!e.target.closest) return;
+      var mv = e.target.closest('.move-proposed');
+      if (mv) {
+        moveProposed(mv.getAttribute('data-name'), mv.getAttribute('data-dir') === 'up' ? -1 : 1);
+        return;
+      }
+      var btn = e.target.closest('.remove-proposed');
       if (!btn) return;
       var name = btn.getAttribute('data-name');
       state.proposedRemoved[name] = true;
       state.proposedAdded = state.proposedAdded.filter(function (n) { return n !== name; });
+      state.proposedOrder = state.proposedOrder.filter(function (n) { return n !== name; });
+      renderInsights(); saveState();
+    });
+    el.resetOrderBtn.addEventListener('click', function () {
+      state.proposedOrder = [];
       renderInsights(); saveState();
     });
     el.addProposedBtn.addEventListener('click', function () {
@@ -209,8 +222,11 @@
 
   function exportSummaryCsv() {
     if (!state.results) return;
-    var csv = PA.export.buildSummaryCsv(state.results, currentHealth(), currentInsights(), {
+    var ins = currentInsights();
+    var csv = PA.export.buildSummaryCsv(state.results, currentHealth(), ins, {
       generated: new Date().toISOString().slice(0, 10),
+      // Same curated list the screen and the PDF use, so all three agree.
+      proposed: computeShownProposed(ins).shown,
       performance: currentPerformance(),
       forecast: currentForecast(),
       filterSummary: filterSummaryText(),
@@ -245,10 +261,37 @@
       var opp = ins.allOpps.filter(function (o) { return o.name === name; })[0];
       if (opp) { shown.push(opp); names[name] = true; }
     });
-    // Keep the displayed list (incl. manually added) in close-date order,
-    // soonest to close first.
-    shown.sort(function (a, b) { return a.closeDate.getTime() - b.closeDate.getTime(); });
+    /*
+     * Order: close date first (soonest to close), unless the user has dragged
+     * the list into their own running order. A manual move stores the whole
+     * order, so anything appearing later — a newly added opportunity, or a
+     * deal that shows up in the next report — has no place in it and falls to
+     * the end by close date rather than landing somewhere arbitrary.
+     */
+    var rank = {};
+    state.proposedOrder.forEach(function (n, i) { rank[n] = i; });
+    shown.sort(function (a, b) {
+      var ai = rank[a.name], bi = rank[b.name];
+      if (ai != null && bi != null) return ai - bi;
+      if (ai != null) return -1;
+      if (bi != null) return 1;
+      return a.closeDate.getTime() - b.closeDate.getTime();
+    });
     return { shown: shown, names: names };
+  }
+
+  // Move one opportunity up or down the list. The resulting order is stored in
+  // full, so it stays stable no matter what changes around it.
+  function moveProposed(name, dir) {
+    if (!state.results) return;
+    var order = computeShownProposed(currentInsights()).shown.map(function (it) { return it.name; });
+    var i = order.indexOf(name);
+    var j = i + dir;
+    if (i === -1 || j < 0 || j >= order.length) return;
+    order[i] = order[j];
+    order[j] = name;
+    state.proposedOrder = order;
+    renderInsights(); saveState();
   }
 
   function generatePdfReport() {
@@ -386,6 +429,7 @@
       state.mapping = PA.mapping.autoDetect(table.headers);
       state.proposedRemoved = {};
       state.proposedAdded = [];
+      state.proposedOrder = [];
       // A new report dates itself from the file and compares against whatever
       // stored report came immediately before it.
       state.reportDate = (meta && meta.date) || PA.compare.toIso(new Date());
@@ -416,6 +460,7 @@
         filters: state.filters,
         proposedRemoved: state.proposedRemoved,
         proposedAdded: state.proposedAdded,
+        proposedOrder: state.proposedOrder,
         dayFirst: state.dayFirst,
         reportDate: state.reportDate,
         reportLabel: state.reportLabel,
@@ -444,6 +489,7 @@
     state.filters = Object.assign({ owner: [], region: [], segment: [], stage: [], leadSource: [] }, saved.filters || {});
     state.proposedRemoved = saved.proposedRemoved || {};
     state.proposedAdded = saved.proposedAdded || [];
+    state.proposedOrder = saved.proposedOrder || [];
     state.dayFirst = saved.dayFirst == null ? null : saved.dayFirst;
     state.reportDate = saved.reportDate || PA.compare.toIso(new Date());
     state.reportLabel = saved.reportLabel || '';
@@ -519,6 +565,7 @@
     state.filters = { owner: [], region: [], segment: [], stage: [], leadSource: [] };
     state.proposedRemoved = {};
     state.proposedAdded = [];
+    state.proposedOrder = [];
     state.dayFirst = null;
     el.targetInput.value = '';
     el.nextTargetInput.value = '';
@@ -835,21 +882,35 @@
     var curated = computeShownProposed(ins);
     var shown = curated.shown, shownNames = curated.names;
 
-    var headers = ['Opportunity', 'Value', 'Close date', 'Rating', 'Next step', ''];
+    var headers = ['#', 'Opportunity', 'Value', 'Close date', 'Rating', 'Next step', ''];
     var thead = '<thead><tr>' + headers.map(function (h) { return '<th>' + h + '</th>'; }).join('') + '</tr></thead>';
-    var body = shown.map(function (it) {
+    var body = shown.map(function (it, idx) {
+      var nm = escapeHtml(it.name);
+      var first = idx === 0, last = idx === shown.length - 1;
       return '<tr>' +
-        '<td>' + escapeHtml(it.name) + '</td>' +
+        '<td class="rank">' + (idx + 1) + '</td>' +
+        '<td>' + nm + '</td>' +
         '<td class="num">' + currency(it.amount) + '</td>' +
         '<td class="num">' + fmtDate(it.closeDate) + '</td>' +
         '<td class="num">' + Math.round(it.probability * 100) + '%</td>' +
         '<td class="next-step">' + escapeHtml(it.nextStep || '—') + '</td>' +
-        '<td class="num"><button type="button" class="remove-proposed" title="Remove" ' +
-          'data-name="' + escapeHtml(it.name) + '">✕</button></td>' +
+        '<td class="num row-actions">' +
+          '<button type="button" class="move-proposed" data-dir="up" title="Move up"' +
+            (first ? ' disabled' : '') + ' aria-label="Move ' + nm + ' up"' +
+            ' data-name="' + nm + '">&#9650;</button>' +
+          '<button type="button" class="move-proposed" data-dir="down" title="Move down"' +
+            (last ? ' disabled' : '') + ' aria-label="Move ' + nm + ' down"' +
+            ' data-name="' + nm + '">&#9660;</button>' +
+          '<button type="button" class="remove-proposed" title="Remove"' +
+            ' aria-label="Remove ' + nm + '" data-name="' + nm + '">✕</button>' +
+        '</td>' +
       '</tr>';
     }).join('');
     el.topProposedTable.innerHTML = thead + '<tbody>' +
-      (body || '<tr><td colspan="6" class="muted">No proposed opportunities.</td></tr>') + '</tbody>';
+      (body || '<tr><td colspan="7" class="muted">No proposed opportunities.</td></tr>') + '</tbody>';
+
+    // The "reset order" control only makes sense once the list has been moved.
+    el.resetOrderBtn.style.display = state.proposedOrder.length ? '' : 'none';
 
     // Populate the "add" dropdown with opportunities not already shown.
     var options = ['<option value="">Select an opportunity…</option>'];
