@@ -81,6 +81,8 @@
     el.resetOrderBtn = $('resetOrderBtn');
     el.yearLabels = { current: $('yearLabelCurrent'), next: $('yearLabelNext') };
     el.compareCard = $('compareCard');
+    el.gridScaleCard = $('gridScaleCard');
+    el.gridScaleBody = $('gridScaleBody');
     el.compareBody = $('compareBody');
     el.reportDateInput = $('reportDateInput');
     el.baselineSelect = $('baselineSelect');
@@ -770,6 +772,7 @@
     renderPerformance();
     renderForecast();
     renderInsights();
+    renderGridScale();
     updateFiltersSummary();
   }
 
@@ -1325,6 +1328,125 @@
         'No longer in the report', 'gone',
         d.removed.length + ' gone', d.removed, d.removedTotal,
         'Every opportunity from the previous report is still present.', null);
+  }
+
+  // ---- Grid Scale projects (ring-fenced) ----
+
+  // Computed straight from the raw rows, with no filters applied: these owners
+  // are suppressed everywhere else, so the dashboard's filters cannot describe
+  // them and applying them would only ever empty the card.
+  function currentGridScale() {
+    if (!state.table || !state.mapping) return null;
+    if (PA.mapping.requiredMissing(state.mapping).length) return null;
+    return PA.analytics.gridScaleMetrics(state.table.rows, state.mapping, {
+      currentYear: state.currentYear,
+      dayFirst: state.dayFirst == null ? undefined : state.dayFirst
+    });
+  }
+
+  function mwText(v) {
+    if (v == null) return '—';
+    return (Math.round(v * 10) / 10).toLocaleString('en-GB') + ' MW';
+  }
+
+  function renderGridScale() {
+    var gs = currentGridScale();
+    var cmp = currentComparison();
+    var d = cmp && cmp.gridScale;
+    var moved = d && (d.added.length || d.removed.length || d.changed.length);
+    if (!gs || (!gs.count && !moved)) {
+      el.gridScaleCard.style.display = 'none';
+      return;
+    }
+    el.gridScaleCard.style.display = 'block';
+
+    var html = '<p class="gs-note">Ring-fenced portfolio — these projects are excluded from ' +
+      'every other figure on this page, and are <strong>not affected by the filters above</strong>. ' +
+      'All open projects, any close date.</p>';
+
+    html += '<div class="compare-tiles">' +
+      gsTile('Projects', String(gs.count), d && d.count, function (v) { return String(v); }) +
+      gsTile('Total value', currency(gs.totalValue), d && d.value, currency) +
+      gsTile('Total capacity', mwText(gs.totalMw), d && d.mw, mwText) +
+      '</div>';
+
+    if (moved) html += gsMovementHtml(d);
+    html += gsProjectsHtml(gs);
+
+    var caveats = [];
+    if (!gs.mwFromColumn) {
+      caveats.push(gs.mwInferredFromName
+        ? 'Capacity read from project names — map an <strong>Amount (MW)</strong> column for exact figures.'
+        : 'No capacity data — map an <strong>Amount (MW)</strong> column.');
+    } else if (gs.projectsWithMw < gs.count) {
+      caveats.push((gs.count - gs.projectsWithMw) + ' project' +
+        (gs.count - gs.projectsWithMw === 1 ? ' has' : 's have') +
+        ' no MW recorded, so the capacity total is partial.');
+    }
+    if (caveats.length) html += '<p class="compare-matchnote">' + caveats.join(' ') + '</p>';
+
+    el.gridScaleBody.innerHTML = html;
+  }
+
+  function gsTile(label, value, m, fmt) {
+    var delta = '';
+    if (m) {
+      var body = m.delta === 0 ? '■ No change'
+        : (m.delta > 0 ? '▲ +' : '▼ −') + fmt(Math.abs(m.delta));
+      delta = '<span class="compare-delta ' +
+        (m.delta === 0 ? 'flat' : (m.delta > 0 ? 'up' : 'down')) + '">' + body + '</span>' +
+        '<span class="compare-tile-from">was ' + fmt(m.prev) + '</span>';
+    }
+    return '<div class="compare-tile">' +
+      '<span class="compare-tile-label">' + escapeHtml(label) + '</span>' +
+      '<span class="compare-tile-value">' + value + '</span>' + delta + '</div>';
+  }
+
+  function gsMovementHtml(d) {
+    function list(title, cls, items, render) {
+      if (!items.length) return '';
+      return '<div class="gs-moved"><span class="compare-pill compare-pill-' + cls + '">' +
+        escapeHtml(title) + ' ' + items.length + '</span><span class="gs-moved-items">' +
+        items.map(render).join(' · ') + '</span></div>';
+    }
+    return '<div class="gs-movement">' +
+      list('Added', 'new', d.added, function (o) {
+        return escapeHtml(o.name) + ' (' + currency(o.amount) + ')';
+      }) +
+      list('Removed', 'gone', d.removed, function (o) {
+        return escapeHtml(o.name) + ' (' + currency(o.amount) + ')';
+      }) +
+      list('Changed', 'renamed', d.changed, function (o) {
+        var bits = [];
+        if (o.fromAmount !== o.amount) bits.push(currency(o.fromAmount) + ' → ' + currency(o.amount));
+        if (o.fromStage !== o.stage) bits.push(escapeHtml(o.fromStage) + ' → ' + escapeHtml(o.stage));
+        if ((o.fromMw || 0) !== (o.mw || 0)) bits.push(mwText(o.fromMw) + ' → ' + mwText(o.mw));
+        return escapeHtml(o.name) + ' (' + bits.join(', ') + ')';
+      }) +
+      '</div>';
+  }
+
+  function gsProjectsHtml(gs) {
+    if (!gs.count) return '<p class="compare-empty">No open Grid Scale projects in this report.</p>';
+    var rows = gs.projects.map(function (p) {
+      return '<tr>' +
+        '<td>' + escapeHtml(p.name) + '</td>' +
+        '<td>' + escapeHtml(p.type || '—') + '</td>' +
+        '<td class="num">' + (p.mw == null ? '—' : mwText(p.mw)) + '</td>' +
+        '<td class="num">' + currency(p.amount) + '</td>' +
+        '<td>' + escapeHtml(p.stage) + '</td>' +
+        '<td class="num">' + fmtDate(p.closeDate) + '</td>' +
+      '</tr>';
+    }).join('');
+    return '<table class="data-table gs-table">' +
+      '<thead><tr><th>Project</th><th>Type</th><th>MW</th><th>Value</th>' +
+      '<th>Stage</th><th>Forecast close</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody>' +
+      '<tfoot><tr class="total-row"><td>Total</td><td></td>' +
+      '<td class="num">' + mwText(gs.totalMw) + '</td>' +
+      '<td class="num">' + currency(gs.totalValue) + '</td>' +
+      '<td>' + gs.count + (gs.count === 1 ? ' project' : ' projects') + '</td><td></td>' +
+      '</tr></tfoot></table>';
   }
 
   function renderHealth() {

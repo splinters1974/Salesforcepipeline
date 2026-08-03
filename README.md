@@ -204,15 +204,20 @@ rule still applies if they are ever taken off the suppression list.
 
 Deals owned by a **Grid Scale owner** (by default Maciej Stefanski — see
 `GRID_SCALE_OWNERS` in `js/analytics.js`) form a separate project portfolio.
-They appear on their **own final page of the PDF report and nowhere else**:
-never in the KPIs, health, performance, forecast, insights, the main report
-comparison, or the filter dropdowns.
+They appear in their **own card at the foot of the dashboard** and on their
+**own final page of the PDF report** — and nowhere else: never in the KPIs,
+health, performance, forecast, insights, the main report comparison, or the
+filter dropdowns.
+
+The card is **not affected by the dashboard filters**. Those filters describe
+the main pipeline, which excludes these owners entirely, so applying them could
+only ever empty the card. It says so on screen.
 
 The ring fence works by those owners also being in `SUPPRESSED_OWNERS`, so the
 main analysis never sees them; the Grid Scale calculation is the single place
 that opts out of suppression and then keeps *only* those owners.
 
-The page shows:
+Both the card and the page show:
 
 - **Projects, total value and total capacity (MW)** as headline figures.
 - **Movement since the previous report** — the change in each of those three,
@@ -222,8 +227,9 @@ The page shows:
 - **Added / removed / changed** since the last report, listed by name. A change
   records what it moved from (value, stage or MW).
 
-It is always **exactly one page**. Beyond 22 projects the table shows the
-largest 22 and says so — the totals still cover the whole portfolio.
+The **PDF page** is always **exactly one page**: beyond 22 projects it shows the
+largest 22 and says so, with the totals still covering the whole portfolio. The
+on-screen card has no such limit and lists every project.
 
 Unlike the main analysis it is **not limited to the current/following year**:
 every open project is listed with its own forecast close date, since the

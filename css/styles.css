@@ -464,7 +464,38 @@ main { padding: 24px 0 48px; }
   .compare-upload { margin-left: 0; }
 }
 
+/* ---- Grid Scale projects card (ring-fenced) ---- */
+.gridscale-card h2::before {
+  content: "";
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius);
+  margin-right: 11px;
+  background: var(--next);
+  flex: none;
+}
+/* Teal accent, so the ring-fenced section reads as separate at a glance */
+.gridscale-card::before { background: var(--next) !important; }
+.gs-note {
+  padding: 10px 14px;
+  margin: 0 0 16px;
+  background: #ebfaf8;
+  border: 1px solid #a5e5df;
+  border-left: 4px solid var(--next);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: #024f4a;
+}
+.gs-movement { margin: 4px 0 16px; display: flex; flex-direction: column; gap: 8px; }
+.gs-moved { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.gs-moved-items { font-size: 12px; color: var(--muted); flex: 1; min-width: 0; }
+/* Project, type and stage hold text; MW, value and date are numeric */
+.data-table.gs-table th:nth-child(2), .data-table.gs-table td:nth-child(2),
+.data-table.gs-table th:nth-child(5), .data-table.gs-table td:nth-child(5) { text-align: left; }
+
 /* Shared section accent bar */
+.gridscale-card::before,
 .compare-card::before,
 .health-card::before,
 .perf-card::before,
