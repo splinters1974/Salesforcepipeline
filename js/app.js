@@ -197,7 +197,8 @@
   // earlier report to measure against.
   function currentComparison() {
     if (!state.snapshot) return null;
-    return PA.compare.diffSnapshots(baselineSnapshot(state.snapshot), state.snapshot);
+    return PA.compare.diffSnapshots(baselineSnapshot(state.snapshot), state.snapshot,
+      { filters: state.filters });
   }
 
   // Slug for filenames, e.g. "Jane Smith" -> "-jane-smith" (empty for everyone).
@@ -1063,7 +1064,7 @@
     el.reportDateInput.value = curr.reportDate;
     populateBaselineOptions(curr);
 
-    var diff = PA.compare.diffSnapshots(baselineSnapshot(curr), curr);
+    var diff = PA.compare.diffSnapshots(baselineSnapshot(curr), curr, { filters: state.filters });
     if (!diff) {
       el.compareBody.innerHTML = '<div class="compare-none">' +
         'No earlier report stored yet — this one has been saved as the baseline (dated <strong>' +
@@ -1092,6 +1093,31 @@
       ? '<p class="compare-matchnote">Deals matched across the two reports: ' +
         escapeHtml(bits.join(', ')) + '.</p>'
       : '';
+
+    // Say plainly which slice these figures describe — without this, a filtered
+    // dashboard beside an unfiltered comparison reads as a contradiction.
+    if ((d.filteredBy || []).length) {
+      note = '<p class="compare-matchnote">Showing <strong>' +
+        escapeHtml(filterSummaryText()) + '</strong> — both reports sliced the same way, ' +
+        'so these figures line up with the rest of the dashboard.</p>' + note;
+    }
+    if (d.outOfWindow) {
+      note += '<p class="compare-matchnote">' + d.outOfWindow + ' movement' +
+        (d.outOfWindow === 1 ? '' : 's') + ' on deals closing outside ' +
+        escapeHtml(String(d.windowYears[0])) + '/' + escapeHtml(String(d.windowYears[1])) +
+        ' ' + (d.outOfWindow === 1 ? 'is' : 'are') + ' not shown — those deals are not ' +
+        'counted in the figures above either.</p>';
+    }
+    if ((d.unsupportedFilters || []).length) {
+      var labels = d.unsupportedFilters.map(function (k) {
+        var dim = FILTER_DIMS.filter(function (f) { return f[0] === k; })[0];
+        return dim ? dim[1] : k;
+      });
+      note += '<div class="compare-warning"><strong>The stored baseline predates ' +
+        'filtering by ' + escapeHtml(labels.join(', ')) + '.</strong> Those filters are ' +
+        'not applied to this comparison, so it covers a wider slice than the rest of the ' +
+        'dashboard. Load both reports again to store them with full filter support.</div>';
+    }
 
     var pct = Math.round((d.unmatchedPrevShare || 0) * 100);
     if (d.removed.length >= 3 && pct >= 20) {

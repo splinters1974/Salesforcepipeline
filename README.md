@@ -115,10 +115,31 @@ a large share of the previous report couldn't be matched at all — which nearly
 always means the two exports don't cover the same ground (different report
 filters, owners or columns) rather than a mass of genuinely lost deals.
 
-Snapshots are the whole report, **unfiltered**, so a comparison is never skewed
-by whichever dashboard filters happened to be active. The history keeps the last
-12 reports and **survives Reset / new file** — that is the point, since you reset
-precisely to load the next report that should be measured against it.
+### Scope — the comparison shows the same slice as the rest of the dashboard
+
+Two rules keep the card consistent with the figures above it:
+
+- **Filters apply.** Filter to a salesperson (or region, segment, stage, lead
+  source) and the comparison re-slices to match — tiles *and* deal lists. Both
+  reports are sliced the same way, so the movement is like-for-like. The card
+  states which filter it is showing.
+- **The year window applies.** Only deals closing in the current or following
+  year are counted, exactly as in the KPI tiles. A deal that closed in a year
+  the dashboard never counted is not listed as a win — otherwise the lists would
+  contradict the tiles. Anything skipped this way is reported as a count, not
+  silently dropped, and a deal that *slipped out* of the window stays visible
+  because it was in the window in the previous report.
+
+Snapshots themselves are stored **unfiltered and whole**, and the filters are
+applied when the comparison is drawn. So changing a filter re-slices instantly,
+and no history is lost to whichever filter happened to be set on the day a
+report was loaded. The history keeps the last 12 reports and **survives Reset /
+new file** — that is the point, since you reset precisely to load the next
+report that should be measured against it.
+
+Deals excluded from the dashboard's headline numbers (Awarded deals owned by an
+excluded owner — see `AWARDED_EXCLUDE_OWNERS` in `js/analytics.js`) are excluded
+from the comparison too.
 
 Both exports carry the comparison: a **Report Comparison page** in the PDF and a
 **Report comparison** section in the summary CSV.

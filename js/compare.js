@@ -19,6 +19,14 @@
   // small enough to stay well inside the localStorage quota.
   var MAX_SNAPSHOTS = 12;
 
+  // 2 = each opportunity also carries region / segment / lead source, so a
+  // stored snapshot can be re-sliced by the dashboard filters after the fact.
+  // Version 1 snapshots only support the owner and stage dimensions.
+  var SNAPSHOT_VERSION = 2;
+
+  // Dimensions a version 1 snapshot cannot answer.
+  var V2_ONLY_DIMS = ['region', 'segment', 'leadSource'];
+
   function normText(s) {
     return String(s == null ? '' : s).trim().toLowerCase().replace(/\s+/g, ' ');
   }
@@ -175,30 +183,72 @@
         closed: !!r.closed,
         won: isWonStage(r.stage),
         closeDate: toIso(r.date),
-        year: r.year
+        year: r.year,
+        // Carried so a stored snapshot can be re-sliced by the dashboard
+        // filters later, without needing the original CSV back.
+        region: r.region,
+        segment: PA.analytics.segmentFor(r.product),
+        leadSource: r.leadSource
       };
     });
 
-    var open = opps.filter(function (o) {
-      return !o.closed && (o.year === currentYear || o.year === nextYear);
-    });
-    var total = 0, weighted = 0;
-    open.forEach(function (o) { total += o.amount; weighted += o.weighted; });
+    var headline = totalsFor(opps, currentYear, nextYear);
 
     var reportDate = opts.reportDate instanceof Date
       ? toIso(opts.reportDate)
       : (opts.reportDate ? String(opts.reportDate).slice(0, 10) : toIso(new Date()));
 
     return {
+      v: SNAPSHOT_VERSION,
       reportDate: reportDate,
       label: opts.label || '',
       currentYear: currentYear,
       nextYear: nextYear,
-      count: open.length,
-      total: total,
-      weighted: weighted,
+      count: headline.count,
+      total: headline.total,
+      weighted: headline.weighted,
       opps: opps
     };
+  }
+
+  /*
+   * Headline figures for a set of opportunities: open pipeline inside the
+   * analysis window. Computed rather than read back from the snapshot so that
+   * a filtered view recomputes correctly.
+   */
+  function totalsFor(opps, currentYear, nextYear) {
+    var open = (opps || []).filter(function (o) {
+      return !o.closed && (o.year === currentYear || o.year === nextYear);
+    });
+    var total = 0, weighted = 0;
+    open.forEach(function (o) { total += o.amount; weighted += o.weighted; });
+    return { count: open.length, total: total, weighted: weighted };
+  }
+
+  // Same semantics as the dashboard's filters: OR within a dimension, AND
+  // across dimensions. Reads the fields stored on a snapshot opportunity.
+  var SNAP_DIMS = {
+    owner: function (o) { return o.owner; },
+    region: function (o) { return o.region; },
+    segment: function (o) { return o.segment; },
+    stage: function (o) { return o.stage; },
+    leadSource: function (o) { return o.leadSource; }
+  };
+
+  function activeDims(filters) {
+    if (!filters) return [];
+    return Object.keys(SNAP_DIMS).filter(function (d) {
+      return Array.isArray(filters[d]) && filters[d].length;
+    });
+  }
+
+  function filterOpps(opps, filters, dims) {
+    if (!dims.length) return opps;
+    return (opps || []).filter(function (o) {
+      return dims.every(function (d) {
+        return filters[d].indexOf(SNAP_DIMS[d](o)) !== -1;
+      });
+    });
   }
 
   function sumField(list, field) {
@@ -227,16 +277,57 @@
    * changed) and `matchedBy` counts, so a run can be sanity-checked rather
    * than silently mis-reporting renamed deals as churn.
    */
-  function diffSnapshots(prev, curr) {
+  function diffSnapshots(prev, curr, opts) {
     if (!prev || !curr) return null;
+    opts = opts || {};
 
-    var m = matchOpps(prev.opps || [], curr.opps || []);
+    /*
+     * Apply the dashboard's filters to both sides, so the comparison describes
+     * the same slice of the pipeline the rest of the screen is showing. The
+     * stored snapshot itself stays unfiltered, so changing a filter re-slices
+     * the comparison instantly and history is never lost to a filter that
+     * happened to be set on the day a report was loaded.
+     */
+    var dims = activeDims(opts.filters);
+    var oldBaseline = (prev.v || 1) < SNAPSHOT_VERSION || (curr.v || 1) < SNAPSHOT_VERSION;
+    // A snapshot stored before those fields existed cannot answer these, so
+    // drop them rather than silently filtering every deal out.
+    var unsupported = oldBaseline
+      ? dims.filter(function (d) { return V2_ONLY_DIMS.indexOf(d) !== -1; })
+      : [];
+    var usable = dims.filter(function (d) { return unsupported.indexOf(d) === -1; });
+
+    var prevOpps = filterOpps(prev.opps || [], opts.filters, usable);
+    var currOpps = filterOpps(curr.opps || [], opts.filters, usable);
+
+    var prevTotals = totalsFor(prevOpps, prev.currentYear, prev.nextYear);
+    var currTotals = totalsFor(currOpps, curr.currentYear, curr.nextYear);
+
+    var m = matchOpps(prevOpps, currOpps);
     var closedWon = [], closedLost = [], renamed = [];
     var matchedBy = { id: 0, name: 0, fingerprint: 0 };
+    var outOfWindow = 0;
+
+    /*
+     * The headline tiles only count open pipeline inside the analysis window,
+     * so the movement lists honour the same window — otherwise a deal closing
+     * in a year the dashboard never counted would appear as a win while the
+     * tiles above it reported no change. A deal counts as in scope if it sat
+     * in the window in EITHER report, which keeps deals that slipped out of
+     * the window visible rather than silently dropping them.
+     */
+    function inWindow(o, snap) {
+      return o && (o.year === snap.currentYear || o.year === snap.nextYear);
+    }
 
     m.pairs.forEach(function (pair) {
       var p = pair.prev, c = pair.curr;
       matchedBy[pair.via]++;
+      if (!inWindow(p, prev) && !inWindow(c, curr)) {
+        // Only count it as skipped if it would otherwise have been reported.
+        if ((!p.closed && c.closed) || (!c.closed && p.name !== c.name)) outOfWindow++;
+        return;
+      }
       // Open before, closed now — the movement the report should call out.
       if (!p.closed && c.closed) {
         (c.won ? closedWon : closedLost).push({
@@ -258,9 +349,18 @@
       }
     });
 
-    // Only genuinely unmatched rows count as new or gone.
-    var added = m.unmatchedCurr.filter(function (c) { return !c.closed; });
-    var removed = m.unmatchedPrev.filter(function (p) { return !p.closed; });
+    // Only genuinely unmatched rows count as new or gone, and only inside the
+    // window the tiles describe.
+    var added = m.unmatchedCurr.filter(function (c) {
+      if (c.closed) return false;
+      if (!inWindow(c, curr)) { outOfWindow++; return false; }
+      return true;
+    });
+    var removed = m.unmatchedPrev.filter(function (p) {
+      if (p.closed) return false;
+      if (!inWindow(p, prev)) { outOfWindow++; return false; }
+      return true;
+    });
 
     closedWon.sort(byValueDesc);
     closedLost.sort(byValueDesc);
@@ -279,9 +379,17 @@
       prevLabel: prev.label || '',
       currLabel: curr.label || '',
       daysBetween: daysBetween,
-      count: movement(prev.count, curr.count),
-      total: movement(prev.total, curr.total),
-      weighted: movement(prev.weighted, curr.weighted),
+      count: movement(prevTotals.count, currTotals.count),
+      total: movement(prevTotals.total, currTotals.total),
+      weighted: movement(prevTotals.weighted, currTotals.weighted),
+      // Which filters this comparison honours, so the card can say so rather
+      // than quietly showing a different slice from the rest of the dashboard.
+      filteredBy: usable,
+      unsupportedFilters: unsupported,
+      // Movements on deals that sat outside the analysis window in both
+      // reports, and so are not shown — reported rather than silently dropped.
+      outOfWindow: outOfWindow,
+      windowYears: [curr.currentYear, curr.nextYear],
       closedWon: closedWon,
       closedLost: closedLost,
       closedWonTotal: sumField(closedWon, 'amount'),
@@ -295,8 +403,8 @@
       // Share of the previous report that could not be matched at all. A high
       // value almost always means the two exports don't cover the same ground
       // (different filters, owners or columns) rather than a mass of lost deals.
-      unmatchedPrevShare: (prev.opps && prev.opps.length)
-        ? m.unmatchedPrev.length / prev.opps.length : 0
+      unmatchedPrevShare: prevOpps.length
+        ? m.unmatchedPrev.length / prevOpps.length : 0
     };
   }
 

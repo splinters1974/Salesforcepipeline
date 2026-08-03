@@ -676,6 +676,97 @@ legacy.opps.forEach(o => { delete o.oppId; });
 eq('legacy snapshots still match by name',
    PA.compare.diffSnapshots(legacy, PA.compare.buildSnapshot(table.rows, mapping, snapOpts('2026-08-02'))).removed.length, 0);
 
+// The comparison must describe the same slice of pipeline as the rest of the
+// dashboard: with a filter active, its headline figures have to agree with
+// analyze() run under the same filter, not with the whole report.
+const janeFilter = { owner: ['Jane Smith'], region: [], segment: [], stage: [], leadSource: [] };
+const resJaneCmp = PA.analytics.analyze(table.rows, mapping,
+  { currentYear: 2026, includeClosed: false, filters: janeFilter });
+const janeExpected = {
+  count: resJaneCmp.years[2026].count + resJaneCmp.years[2027].count,
+  total: resJaneCmp.years[2026].total + resJaneCmp.years[2027].total
+};
+const janeDiff = PA.compare.diffSnapshots(
+  prevSnap, PA.compare.buildSnapshot(table.rows, mapping, snapOpts('2026-08-02')),
+  { filters: janeFilter });
+eq('filtered comparison count matches the dashboard', janeDiff.count.curr, janeExpected.count);
+approx('filtered comparison value matches the dashboard', janeDiff.total.curr, janeExpected.total);
+eq('filtered comparison is not the whole report', janeDiff.count.curr < prevSnap.count, true);
+eq('filter is reported on the diff', janeDiff.filteredBy.join(), 'owner');
+
+// Unfiltered, the comparison still equals the unfiltered dashboard.
+const noFilterDiff = PA.compare.diffSnapshots(
+  prevSnap, PA.compare.buildSnapshot(table.rows, mapping, snapOpts('2026-08-02')), {});
+eq('unfiltered comparison count matches the dashboard',
+   noFilterDiff.count.curr, res.years[2026].count + res.years[2027].count);
+approx('unfiltered comparison value matches the dashboard',
+   noFilterDiff.total.curr, res.years[2026].total + res.years[2027].total);
+
+// A filter must slice the movement lists too, not just the tiles.
+const wonRowsJane = clone(table.rows);
+wonRowsJane.find(r => r['Opportunity Name'] === 'Acme Renewal')['Stage'] = 'Closed Won';   // Jane
+wonRowsJane.find(r => r['Opportunity Name'] === 'Wonka Platform')['Stage'] = 'Closed Won'; // Mike
+const janeWonDiff = PA.compare.diffSnapshots(
+  prevSnap, PA.compare.buildSnapshot(wonRowsJane, mapping, snapOpts('2026-08-02')),
+  { filters: janeFilter });
+eq('filtered closed-won list excludes other owners', janeWonDiff.closedWon.length, 1);
+eq('filtered closed-won keeps the right deal', janeWonDiff.closedWon[0].name, 'Acme Renewal');
+
+// Snapshots carry the fields the filters need.
+eq('snapshot carries region', typeof prevSnap.opps[0].region, 'string');
+eq('snapshot carries segment', typeof prevSnap.opps[0].segment, 'string');
+eq('snapshot carries lead source', typeof prevSnap.opps[0].leadSource, 'string');
+eq('snapshot records its version', prevSnap.v, 2);
+
+// A pre-filter snapshot must not silently drop every deal: unsupported
+// dimensions are skipped and reported instead.
+const legacySnap = JSON.parse(JSON.stringify(prevSnap));
+delete legacySnap.v;
+legacySnap.opps.forEach(o => { delete o.region; delete o.segment; delete o.leadSource; });
+const legacyDiff = PA.compare.diffSnapshots(
+  legacySnap, PA.compare.buildSnapshot(table.rows, mapping, snapOpts('2026-08-02')),
+  { filters: { owner: [], region: ['EMEA'], segment: [], stage: [], leadSource: [] } });
+eq('legacy baseline does not zero out under a region filter', legacyDiff.count.curr > 0, true);
+eq('unsupported filter is reported', legacyDiff.unsupportedFilters.join(), 'region');
+// Owner and stage still work against a legacy snapshot.
+const legacyOwnerDiff = PA.compare.diffSnapshots(legacySnap,
+  PA.compare.buildSnapshot(table.rows, mapping, snapOpts('2026-08-02')), { filters: janeFilter });
+eq('legacy baseline still filters by owner', legacyOwnerDiff.count.curr, janeExpected.count);
+eq('legacy owner filter is supported', legacyOwnerDiff.unsupportedFilters.length, 0);
+
+// The movement lists must honour the same year window as the headline tiles,
+// or a deal closing in a year the dashboard never counted would show as a win
+// while the tiles above it reported no change.
+const oow = clone(table.rows);
+oow.find(r => r['Opportunity Name'] === 'Stale Lead 2025')['Stage'] = 'Closed Won';
+const oowDiff = PA.compare.diffSnapshots(
+  prevSnap, PA.compare.buildSnapshot(oow, mapping, snapOpts('2026-08-02')), {});
+eq('out-of-window win is not listed', oowDiff.closedWon.length, 0);
+eq('out-of-window movement is reported, not hidden', oowDiff.outOfWindow, 1);
+eq('out-of-window win leaves the tiles unchanged', oowDiff.count.delta, 0);
+eq('window years surfaced', oowDiff.windowYears.join('/'), '2026/2027');
+
+// An in-window win is still reported, and moves the tiles.
+eq('in-window win is still listed', wonDiff.closedWon.length, 1);
+eq('in-window win has no out-of-window noise', wonDiff.outOfWindow, 0);
+
+// A deal that slipped out of the window stays visible, because it was in the
+// window in the previous report.
+const slipped = clone(table.rows);
+slipped.find(r => r['Opportunity Name'] === 'Acme Renewal')['Close Date'] = '15/03/2029';
+slipped.find(r => r['Opportunity Name'] === 'Acme Renewal')['Stage'] = 'Closed Lost';
+const slipDiff = PA.compare.diffSnapshots(
+  prevSnap, PA.compare.buildSnapshot(slipped, mapping, snapOpts('2026-08-02')), {});
+eq('deal slipping out of the window is still reported', slipDiff.closedLost.length, 1);
+
+// A brand-new deal closing outside the window is not counted as new pipeline.
+const farOut = clone(table.rows);
+farOut.push(synthRow('Nia Patel', 'Discovery', '£90,000', '10/10/2029'));
+const farDiff = PA.compare.diffSnapshots(
+  prevSnap, PA.compare.buildSnapshot(farOut, mapping, snapOpts('2026-08-02')), {});
+eq('out-of-window new deal is not listed as new', farDiff.added.length, 0);
+eq('out-of-window new deal is reported as skipped', farDiff.outOfWindow, 1);
+
 // Matching by Opportunity ID survives a rename that name-matching would miss.
 const idMapping = Object.assign({}, mapping, { oppId: 'Opportunity ID' });
 const withIds = clone(table.rows).map((r, i) => Object.assign(r, { 'Opportunity ID': 'OPP' + i }));
