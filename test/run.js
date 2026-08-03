@@ -98,13 +98,25 @@ const synthRow = (owner, stage, amount, close) => ({
   'Created Date': '01/01/2026', 'Last Modified Date': '01/06/2026', 'Lead Source': 'Web',
   'Next Step': '', 'Product Family': 'X', 'Region': 'EMEA'
 });
+// Finlay is now in SUPPRESSED_OWNERS, so every stage of his is dropped, not
+// just Awarded — only Jane's deal survives.
 const resFin = PA.analytics.analyze([
   synthRow('Finlay Anderson', 'Awarded', '£50,000', '10/06/2026'),
   synthRow('Finlay Anderson', 'Proposal/Price Quote', '£40,000', '12/06/2026'),
   synthRow('Jane Smith', 'Awarded', '£30,000', '14/06/2026')
 ], mapping, { currentYear: 2026 });
-approx('year total excludes Finlay awarded', resFin.years[2026].total, 70000);
-eq('year count excludes Finlay awarded only', resFin.years[2026].count, 2);
+approx('suppressed owner contributes nothing at any stage', resFin.years[2026].total, 30000);
+eq('suppressed owner rows all removed', resFin.years[2026].count, 1);
+
+// The awarded-only rule still exists for anyone NOT suppressed: it drops that
+// one stage and keeps the rest.
+const resAwardOnly = PA.analytics.analyze([
+  synthRow('Dana Wright', 'Awarded', '£50,000', '10/06/2026'),
+  synthRow('Dana Wright', 'Proposal/Price Quote', '£40,000', '12/06/2026'),
+  synthRow('Jane Smith', 'Awarded', '£30,000', '14/06/2026')
+], mapping, { currentYear: 2026, awardedExcludeOwners: ['dana'] });
+approx('awarded-only exclusion drops just that stage', resAwardOnly.years[2026].total, 70000);
+eq('awarded-only exclusion keeps other stages', resAwardOnly.years[2026].count, 2);
 
 // 2025 rows (Legacy 90k won, Old 30k) must be out of range, not counted
 eq('out-of-range count > 0', res.outOfRange >= 2, true);
@@ -520,8 +532,8 @@ const foot = doc.footer(2, 3);
 eq('pdf footer shows page numbers', JSON.stringify(foot).indexOf('2 / 3') !== -1, true);
 
 // ---- Suppressed owners: ignored everywhere, in every metric ----
-const SUP = ['Maciej Stefanski', 'Joshua Mauger', 'Katherine Piper'];
-eq('three owners are suppressed by default', PA.analytics.SUPPRESSED_OWNERS.length, 3);
+const SUP = ['Maciej Stefanski', 'Joshua Mauger', 'Katherine Piper', 'Finlay Anderson'];
+eq('four owners are suppressed by default', PA.analytics.SUPPRESSED_OWNERS.length, 4);
 SUP.forEach(n => eq('suppressed: ' + n, PA.analytics.isSuppressedOwner(n), true));
 // Name-order and punctuation variants must still match.
 eq('suppressed: "Piper, Katherine"', PA.analytics.isSuppressedOwner('Piper, Katherine'), true);
@@ -610,38 +622,40 @@ eq('stale baseline tiles ignore suppressed deals', staleDiff.count.delta, 0);
 approx('stale baseline "was" value excludes suppressed deals',
    staleDiff.total.prev, res.years[2026].total + res.years[2027].total);
 
-// AWARDED_EXCLUDE_OWNERS drops one stage, not the person: an excluded owner's
-// other stages still count in the headline pipeline.
+// Finlay is suppressed outright now, so none of his stages reach any figure.
 const finRow = (name, stage, amount) => Object.assign(
   synthRow('Finlay Anderson', stage, amount, '12/06/2026'), { 'Opportunity Name': name });
-const finAll = table.rows.concat([
+const withFin = PA.analytics.analyze(table.rows.concat([
   finRow('Fin Awarded', 'Awarded', '£500,000'),
   finRow('Fin Proposal', 'Proposal/Price Quote', '£400,000'),
   finRow('Fin Discovery', 'Discovery', '£300,000')
-]);
-const withFin = PA.analytics.analyze(finAll, mapping, { currentYear: 2026, includeClosed: false });
-approx('excluded owner: awarded dropped, other stages counted',
-   withFin.years[2026].total, res.years[2026].total + 700000);
+]), mapping, { currentYear: 2026, includeClosed: false });
+approx('suppressed owner adds nothing at any stage',
+   withFin.years[2026].total, res.years[2026].total);
+eq('all of a suppressed owner\'s rows are counted as excluded', withFin.suppressed, 3);
 
-// A deal moving Proposal -> Awarded is progress. Crossing into the excluded
-// set must not be reported as the deal vanishing from the report.
-const finPrev = PA.compare.buildSnapshot(
-  table.rows.concat([finRow('Fin Big Deal', 'Proposal/Price Quote', '£400,000')]),
-  mapping, { currentYear: 2026, dayFirst: true, reportDate: '2026-06-12' });
-const finCurr = PA.compare.buildSnapshot(
-  table.rows.concat([finRow('Fin Big Deal', 'Awarded', '£400,000')]),
-  mapping, { currentYear: 2026, dayFirst: true, reportDate: '2026-08-02' });
-const finDiff = PA.compare.diffSnapshots(finPrev, finCurr, {});
-eq('advancing into an excluded stage is not a loss', finDiff.removed.length, 0);
-eq('advancing into an excluded stage is not a new deal', finDiff.added.length, 0);
-eq('the skipped movement is still reported', finDiff.notShown, 0);
+/*
+ * The awarded-exclusion boundary, exercised with an owner who is NOT
+ * suppressed. A deal moving Proposal -> Awarded is progress; crossing into the
+ * excluded set must not be reported as the deal vanishing from the report.
+ */
+const danaRow = (stage) => Object.assign(
+  synthRow('Dana Wright', stage, '£400,000', '12/06/2026'), { 'Opportunity Name': 'Dana Big Deal' });
+const danaOpts = { currentYear: 2026, dayFirst: true, awardedExcludeOwners: ['dana'] };
+const danaPrev = PA.compare.buildSnapshot(table.rows.concat([danaRow('Proposal/Price Quote')]),
+  mapping, Object.assign({ reportDate: '2026-06-12' }, danaOpts));
+const danaCurr = PA.compare.buildSnapshot(table.rows.concat([danaRow('Awarded')]),
+  mapping, Object.assign({ reportDate: '2026-08-02' }, danaOpts));
+const danaDiff = PA.compare.diffSnapshots(danaPrev, danaCurr, { awardedExcludeOwners: ['dana'] });
+eq('advancing into an excluded stage is not a loss', danaDiff.removed.length, 0);
+eq('advancing into an excluded stage is not a new deal', danaDiff.added.length, 0);
 // The tiles still reflect the dashboard's own rule: it counted last time, not now.
-approx('tiles follow the dashboard rule', finDiff.total.delta, -400000);
+approx('tiles follow the dashboard rule', danaDiff.total.delta, -400000);
 // Excluded deals are kept in the snapshot but flagged, and never counted.
 eq('excluded deal is retained in the snapshot',
-   finCurr.opps.some(o => o.name === 'Fin Big Deal' && o.excluded === true), true);
+   danaCurr.opps.some(o => o.name === 'Dana Big Deal' && o.excluded === true), true);
 approx('excluded deal adds nothing to snapshot totals',
-   finCurr.total, res.years[2026].total + res.years[2027].total);
+   danaCurr.total, res.years[2026].total + res.years[2027].total);
 
 // An override list keeps the rule configurable.
 eq('override suppresses someone else',

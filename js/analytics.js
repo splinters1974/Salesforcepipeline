@@ -74,7 +74,12 @@
   // Forecast-pipeline windows (month / 90-day / 365-day) only count deals at
   // these stages (lower-case match): discovery, proposed, awarded.
   var FORECAST_STAGES = ['discover', 'propos', 'award'];
-  // Owners (lower-case substring) whose AWARDED pipeline is excluded.
+  /*
+   * Owners (lower-case substring) whose AWARDED pipeline is excluded.
+   * Note: anyone also listed in SUPPRESSED_OWNERS never reaches this check,
+   * because suppression drops their rows first. The entry is kept so the rule
+   * still applies if that person is later removed from the suppression list.
+   */
   var AWARDED_EXCLUDE_OWNERS = ['finlay'];
 
   /*
@@ -92,7 +97,12 @@
   var SUPPRESSED_OWNERS = [
     'maciej stefanski',
     'joshua mauger',
-    'katherine piper'
+    'katherine piper',
+    // Finlay's Awarded pipeline was already excluded via AWARDED_EXCLUDE_OWNERS
+    // below; this removes his remaining stages too, so he is absent entirely.
+    // A single token, matching the AWARDED_EXCLUDE_OWNERS entry, so it still
+    // applies however the surname is exported.
+    'finlay'
   ];
 
   // Split a name into comparable lower-case tokens, ignoring punctuation.

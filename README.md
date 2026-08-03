@@ -174,8 +174,8 @@ anywhere: KPIs, Pipeline Health, Sales Performance, Forecast Outlook, Pipeline
 Insights, the Report Comparison, the exports, and the filter dropdowns (they are
 not offered as a salesperson to filter by).
 
-By default that list is **Maciej Stefanski, Joshua Mauger and Katherine Piper**.
-Edit `SUPPRESSED_OWNERS` at the top of `js/analytics.js` to change it.
+By default that list is **Maciej Stefanski, Joshua Mauger, Katherine Piper and
+Finlay**. Edit `SUPPRESSED_OWNERS` at the top of `js/analytics.js` to change it.
 
 Matching is on name tokens, so `Katherine Piper`, `Piper, Katherine` and
 `Katherine J Piper` all match, while `Katherine Piperson` does not.
@@ -185,7 +185,12 @@ rows in an *excluded owners* chip and names who was excluded — the row totals
 still add up (`rows in file` = parsed + skipped + excluded).
 
 This is distinct from `AWARDED_EXCLUDE_OWNERS`, which only drops one *stage*
-(Awarded) for the owners it lists, rather than the person entirely.
+(Awarded) for the owners it lists, rather than the person entirely. Finlay
+appears in both: his Awarded pipeline was already excluded by that rule, and
+he is now suppressed outright, so every stage of his is gone. Anyone listed in
+`SUPPRESSED_OWNERS` never reaches the Awarded check, since suppression drops
+their rows first — the `AWARDED_EXCLUDE_OWNERS` entry is kept so the narrower
+rule still applies if they are ever taken off the suppression list.
 
 ## Column mapping (optional fields)
 
