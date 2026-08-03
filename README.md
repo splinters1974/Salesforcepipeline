@@ -25,6 +25,22 @@ For both the current year and next year, side by side:
 probability column it is used directly; otherwise the app estimates a
 probability from each opportunity's stage (see *Weighted forecast* below).
 
+## Collapsible sections
+
+Every section on the dashboard collapses to a single header line that says what
+is inside it — "Pipeline Health · Coverage against target, stale deals, segment
+and technology mix". Click a header (or press Enter on it) to open or close.
+
+**Everything starts closed**, so a freshly loaded report opens as a short list of
+headings rather than a wall of figures. Whatever you leave open is remembered
+per section and comes back open next session, so the parts you actually use are
+already expanded.
+
+Collapsing is presentation only — it changes nothing about the figures. The
+**PDF report and printing always include every section**, whatever is closed on
+screen: the export briefly expands the cards so the charts have a box to draw
+in, then puts your layout back.
+
 ## Data Quality
 
 A full-width **Data Quality** card (just below the filters) makes the parse

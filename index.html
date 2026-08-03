@@ -35,10 +35,13 @@
     </section>
 
     <!-- Column mapping -->
-    <section id="mappingSection" class="card" style="display:none">
+    <section id="mappingSection" class="card" style="display:none" data-collapse="mapping"
+             data-summary="Which CSV column feeds each field">
       <h2>Column mapping</h2>
-      <p class="muted">We guessed which columns to use. Correct anything below — fields marked * are required.</p>
-      <div id="mappingPanel" class="mapping-grid"></div>
+      <div class="card-body">
+        <p class="muted">We guessed which columns to use. Correct anything below — fields marked * are required.</p>
+        <div id="mappingPanel" class="mapping-grid"></div>
+      </div>
     </section>
 
     <!-- Dashboard -->
@@ -74,10 +77,15 @@
       </div>
 
       <!-- Data Quality (full-width) — populated by renderDataQuality() -->
-      <section class="dq-card card" id="dataQualityCard"></section>
+      <section class="dq-card card" id="dataQualityCard" data-collapse="dq"
+               data-summary="Row counts, close-date years, date format and skipped rows">
+        <h2>Data Quality</h2>
+        <div class="card-body" id="dataQualityBody"></div>
+      </section>
 
       <!-- Report Comparison (full-width) — movement since the previous report -->
-      <section class="compare-card card" id="compareCard" style="display:none">
+      <section class="compare-card card" id="compareCard" style="display:none" data-collapse="compare"
+               data-summary="Movement since the previous report — won, lost, new and gone">
         <h2>Report Comparison</h2>
         <div class="compare-controls">
           <label>This report dated
@@ -95,7 +103,8 @@
       </section>
 
       <!-- Pipeline Health (full-width, current year) -->
-      <section class="health-card card" id="healthCard">
+      <section class="health-card card" id="healthCard" data-collapse="health"
+               data-summary="Coverage against target, stale deals, segment and technology mix">
         <h2>Pipeline Health — <span id="healthYearLabel"></span></h2>
         <div class="health-panels">
 
@@ -132,7 +141,8 @@
       </section>
 
       <!-- Sales Performance (full-width, current year) -->
-      <section class="perf-card card" id="perfCard">
+      <section class="perf-card card" id="perfCard" data-collapse="perf"
+               data-summary="Win rate, average sales cycle and pipeline velocity">
         <h2>Sales Performance — <span id="perfYearLabel"></span></h2>
         <div class="kpi-row">
           <div class="kpi"><span class="kpi-label">Win rate (by count)</span><span class="kpi-value" id="perfWinRate">—</span><span class="kpi-sub" id="perfWinSub"></span></div>
@@ -143,7 +153,8 @@
       </section>
 
       <!-- Forecast Outlook (full-width, anchored to the report month) -->
-      <section class="forecast-card card" id="forecastCard">
+      <section class="forecast-card card" id="forecastCard" data-collapse="forecast"
+               data-summary="Orders this month, next 90 days, 365-day and strategic pipeline">
         <h2>Forecast Outlook — <span id="fcMonthLabel"></span></h2>
         <div class="kpi-row">
           <div class="kpi"><span class="kpi-label">Orders expected this month</span><span class="kpi-value" id="fcOrdersMonth">—</span><span class="kpi-sub" id="fcOrdersMonthSub"></span></div>
@@ -154,7 +165,8 @@
       </section>
 
       <!-- Pipeline Insights (full-width) -->
-      <section class="insights-card card" id="insightsCard">
+      <section class="insights-card card" id="insightsCard" data-collapse="insights"
+               data-summary="Deal age, won revenue, lead sources, awarded list and your Top 10">
         <h2>Pipeline Insights</h2>
         <div class="insight-panels">
 
@@ -199,7 +211,8 @@
 
       <div class="year-grid">
         <!-- Current year column -->
-        <div class="year-col">
+        <div class="year-col" data-collapse="year-current"
+             data-summary="KPIs, value by stage, timeline and by owner">
           <h2 class="year-heading current">Current year — <span id="yearLabelCurrent"></span></h2>
           <div class="kpi-row">
             <div class="kpi"><span class="kpi-label">Total pipeline</span><span class="kpi-value" id="kpiTotal_current">—</span></div>
@@ -227,7 +240,8 @@
         </div>
 
         <!-- Next year column -->
-        <div class="year-col">
+        <div class="year-col" data-collapse="year-next"
+             data-summary="KPIs, value by stage, timeline and by owner">
           <h2 class="year-heading next">Following year — <span id="yearLabelNext"></span></h2>
           <div class="kpi-row">
             <div class="kpi"><span class="kpi-label">Total pipeline</span><span class="kpi-value" id="kpiTotal_next">—</span></div>
@@ -256,7 +270,8 @@
       </div>
 
       <!-- Grid Scale projects (ring-fenced) — populated by renderGridScale() -->
-      <section class="gridscale-card card" id="gridScaleCard" style="display:none">
+      <section class="gridscale-card card" id="gridScaleCard" style="display:none" data-collapse="gridscale"
+               data-summary="Ring-fenced Grid Scale portfolio — projects, value and capacity">
         <h2>Grid Scale Projects</h2>
         <div id="gridScaleBody"></div>
       </section>

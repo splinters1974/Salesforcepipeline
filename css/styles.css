@@ -188,6 +188,44 @@ main { padding: 24px 0 48px; }
 }
 .muted { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
 
+/* ---- Collapsible cards ---- */
+.card-toggle { cursor: pointer; user-select: none; }
+.card-toggle:hover { color: var(--current); }
+.card-toggle:focus-visible { outline: 2px solid var(--current); outline-offset: 3px; }
+/* What's inside, shown only once the card is closed */
+.card-summary {
+  display: none;
+  margin-left: 12px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--muted);
+  letter-spacing: 0;
+  text-transform: none;
+}
+.is-collapsed .card-summary { display: inline; }
+.card-chevron {
+  margin-left: auto;
+  flex: none;
+  width: 9px; height: 9px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);          /* pointing down = expanded */
+  transition: transform .15s ease;
+}
+.is-collapsed .card-chevron { transform: rotate(-45deg); }
+.card-toggle:hover .card-chevron { border-color: var(--current); }
+.is-collapsed > .card-body { display: none; }
+/* A closed card is just a header — drop the divider and its spacing */
+.is-collapsed > h2 { padding-bottom: 0; border-bottom: none; margin-bottom: 0; }
+.year-col.is-collapsed { padding-top: 16px; padding-bottom: 16px; }
+.is-collapsed { padding-top: 16px; padding-bottom: 16px; }
+/* The accent bars are sized for a tall card; keep them tidy when collapsed */
+.is-collapsed::before { top: 12px; bottom: 12px; }
+
+@media (max-width: 700px) {
+  .card-summary { display: none !important; }
+}
+
 /* Section icon chips — flat brand-blue squares, SLDS icon-container style */
 #mappingSection h2::before,
 #healthCard h2::before,
@@ -919,7 +957,12 @@ main { padding: 24px 0 48px; }
   .remove-proposed,
   .move-proposed,
   .reorder-hint,
+  .card-chevron,
+  .card-summary,
   .app-footer { display: none !important; }
+  /* Printing must show everything, whatever is collapsed on screen */
+  .is-collapsed > .card-body { display: block !important; }
+  .is-collapsed > h2 { padding-bottom: 12px; border-bottom: 1px solid #ddd; margin-bottom: 16px; }
   .wrap { max-width: none; padding: 0; }
   .card { box-shadow: none; border-color: #ddd; }
   .card::before, .year-heading::before { display: none !important; }

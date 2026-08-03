@@ -32,6 +32,9 @@
   // entered by hand, and it must outlive both a new report and a dataset too
   // large for the main blob to save.
   var TOP10_KEY = 'pipelineAnalysis.top10.v1';
+  // Which cards are expanded. Cosmetic, so it has its own key and never
+  // interferes with the data or the curated list.
+  var CARDS_KEY = 'pipelineAnalysis.cards.v1';
 
   var state = {
     table: null,        // { headers, rows }
@@ -50,6 +53,7 @@
     proposedRemoved: {}, // {name: true} manually removed from the top-10 list
     proposedAdded: [],   // [name] manually added to the top-10 list
     proposedOrder: [],   // [name] manual running order; empty = by close date
+    openCards: {},       // {cardId: true} — cards left expanded; default closed
     dayFirst: null,      // date format override: null=auto, true=D/M/Y, false=M/D/Y
     currentYear: 2026   // overridable; defaults to system year below
   };
@@ -67,6 +71,7 @@
     el.mappingSection = $('mappingSection');
     el.dashboard = $('dashboard');
     el.dataQuality = $('dataQualityCard');
+    el.dataQualityBody = $('dataQualityBody');
     el.status = $('statusBar');
     el.granularity = $('granularitySelect');
     el.salespersonSlot = $('salespersonSlot');
@@ -200,6 +205,8 @@
     // Charts don't reflow for print on their own — resize them first.
     window.addEventListener('beforeprint', function () { PA.charts.resizeAll(); });
 
+    restoreCardState();
+    initCollapsibleCards();
     restoreSnapshots();
     restoreTop10();
     restoreState();
@@ -308,8 +315,36 @@
     renderInsights(); saveTop10(); saveState();
   }
 
+  /*
+   * Run `fn` with every card expanded, then put the collapse state back.
+   *
+   * A chart inside a collapsed card sits in a display:none body, so its canvas
+   * is 0x0 and toBase64Image() returns an empty image — every chart in the PDF
+   * would come out blank. Expanding first gives Chart.js a box to draw in.
+   */
+  function withAllCardsOpen(fn) {
+    var sections = document.querySelectorAll('[data-collapse]');
+    var was = [];
+    Array.prototype.forEach.call(sections, function (s) {
+      was.push([s, s.classList.contains('is-collapsed')]);
+      s.classList.remove('is-collapsed');
+    });
+    PA.charts.resizeAll();
+    // One frame for layout and the redraw to land before the canvases are read.
+    setTimeout(function () {
+      try { fn(); } finally {
+        was.forEach(function (w) { w[0].classList.toggle('is-collapsed', w[1]); });
+        PA.charts.resizeAll();
+      }
+    }, 80);
+  }
+
   function generatePdfReport() {
     if (!state.results) return;
+    withAllCardsOpen(buildAndDownloadPdf);
+  }
+
+  function buildAndDownloadPdf() {
     var ins = currentInsights();
     var docDef = PA.pdf.buildDocDefinition({
       results: state.results,
@@ -513,6 +548,96 @@
     el.nextTargetInput.value = state.nextTarget;
 
     onTableLoaded(saved.table, true);
+  }
+
+  /*
+   * ---- Collapsible cards ----
+   *
+   * Every card starts closed, so a freshly loaded report opens as a short list
+   * of headings rather than a wall of figures. Open one and it stays open —
+   * the state is remembered per card, so the sections someone actually uses
+   * are already expanded next session.
+   */
+  function saveCardState() {
+    try { localStorage.setItem(CARDS_KEY, JSON.stringify(state.openCards)); }
+    catch (e) { /* cosmetic only — never break the app over it */ }
+  }
+
+  function restoreCardState() {
+    var raw;
+    try { raw = localStorage.getItem(CARDS_KEY); } catch (e) { return; }
+    if (!raw) return;
+    try {
+      var v = JSON.parse(raw);
+      if (v && typeof v === 'object') state.openCards = v;
+    } catch (e) { /* ignore corrupt state */ }
+  }
+
+  // Move everything after the heading into a body wrapper, so one element can
+  // be shown and hidden. Done once, in JS, so the markup stays plain.
+  function ensureCardBody(section) {
+    var existing = section.querySelector(':scope > .card-body');
+    if (existing) return existing;
+    var h2 = section.querySelector(':scope > h2');
+    var body = document.createElement('div');
+    body.className = 'card-body';
+    var node = h2 ? h2.nextSibling : section.firstChild;
+    while (node) {
+      var next = node.nextSibling;
+      body.appendChild(node);
+      node = next;
+    }
+    section.appendChild(body);
+    return body;
+  }
+
+  function setCardOpen(section, open) {
+    var id = section.getAttribute('data-collapse');
+    var h2 = section.querySelector(':scope > h2');
+    section.classList.toggle('is-collapsed', !open);
+    if (h2) h2.setAttribute('aria-expanded', open ? 'true' : 'false');
+    state.openCards[id] = !!open;
+  }
+
+  function initCollapsibleCards() {
+    var sections = document.querySelectorAll('[data-collapse]');
+    Array.prototype.forEach.call(sections, function (section) {
+      var id = section.getAttribute('data-collapse');
+      ensureCardBody(section);
+      var h2 = section.querySelector(':scope > h2');
+      if (!h2) return;
+
+      // What's inside, shown on the collapsed header so a closed card still
+      // says what it holds.
+      var summary = section.getAttribute('data-summary');
+      if (summary) {
+        var sum = document.createElement('span');
+        sum.className = 'card-summary';
+        sum.textContent = summary;
+        h2.appendChild(sum);
+      }
+      var chev = document.createElement('span');
+      chev.className = 'card-chevron';
+      chev.setAttribute('aria-hidden', 'true');
+      h2.appendChild(chev);
+
+      h2.classList.add('card-toggle');
+      h2.setAttribute('role', 'button');
+      h2.setAttribute('tabindex', '0');
+      h2.addEventListener('click', function () {
+        setCardOpen(section, section.classList.contains('is-collapsed'));
+        saveCardState();
+      });
+      h2.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        e.preventDefault();
+        setCardOpen(section, section.classList.contains('is-collapsed'));
+        saveCardState();
+      });
+
+      // Closed unless this card was left open last time.
+      setCardOpen(section, state.openCards[id] === true);
+    });
   }
 
   // ---- The hand-curated Top 10 ----
@@ -1125,8 +1250,9 @@
         '</div>';
     }
 
-    el.dataQuality.innerHTML =
-      '<h2>Data Quality</h2>' +
+    // Writes into the stable body element, not the card itself — the card owns
+    // the heading and the collapse wrapper.
+    el.dataQualityBody.innerHTML =
       summary +
       '<div class="dq-grid">' + yearBlock + formatBlock + '</div>' +
       skippedBlock;
