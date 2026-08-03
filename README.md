@@ -182,8 +182,9 @@ anywhere: KPIs, Pipeline Health, Sales Performance, Forecast Outlook, Pipeline
 Insights, the Report Comparison, the exports, and the filter dropdowns (they are
 not offered as a salesperson to filter by).
 
-By default that list is **Maciej Stefanski, Joshua Mauger, Katherine Piper and
-Finlay**. Edit `SUPPRESSED_OWNERS` at the top of `js/analytics.js` to change it.
+By default that list is **Maciej Stefanski, Joshua Mauger and Katherine Piper**.
+Edit `SUPPRESSED_OWNERS` at the top of `js/analytics.js` to change it.
+(Finlay is *not* on it — see *Stage-limited owners* below.)
 
 Matching is on name tokens, so `Katherine Piper`, `Piper, Katherine` and
 `Katherine J Piper` all match, while `Katherine Piperson` does not.
@@ -192,13 +193,30 @@ So the exclusion is never silent, the **Data Quality** card counts the dropped
 rows in an *excluded owners* chip and names who was excluded — the row totals
 still add up (`rows in file` = parsed + skipped + excluded).
 
-This is distinct from `AWARDED_EXCLUDE_OWNERS`, which only drops one *stage*
-(Awarded) for the owners it lists, rather than the person entirely. Finlay
-appears in both: his Awarded pipeline was already excluded by that rule, and
-he is now suppressed outright, so every stage of his is gone. Anyone listed in
-`SUPPRESSED_OWNERS` never reaches the Awarded check, since suppression drops
-their rows first — the `AWARDED_EXCLUDE_OWNERS` entry is kept so the narrower
-rule still applies if they are ever taken off the suppression list.
+### Stage-limited owners
+
+`STAGE_LIMITED_OWNERS` is the middle ground: an owner counts **only at certain
+stages**, and everything they own at any other stage is dropped exactly as if
+they were suppressed.
+
+**Finlay** is stage-limited to **Closed Won and Awarded** — his won revenue and
+awarded work count in full, while his earlier-stage pipeline (Discovery,
+Proposal, Qualification) is excluded from the forecast. He appears normally in
+the salesperson filter, the Awarded list and Won-revenue-by-owner.
+
+Those dropped rows are counted separately in the **Data Quality** card, which
+names the rule, so this exclusion is as visible as full suppression.
+
+> **Note on win rate.** Closed *Lost* is not a kept stage, so a stage-limited
+> owner contributes wins without the matching losses, which nudges the win rate
+> up. Add `'closed lost'` to their `keepStages` if you would rather the rate
+> stayed representative.
+
+A third rule, `AWARDED_EXCLUDE_OWNERS`, drops just the Awarded stage for the
+owners it lists. It is **empty by default** — the mechanism is kept because it
+is the natural place to drop a single stage, but nobody is excluded that way
+now. Anyone in `SUPPRESSED_OWNERS` never reaches it, since suppression drops
+their rows first.
 
 ## Grid Scale projects (ring-fenced)
 

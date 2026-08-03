@@ -957,22 +957,31 @@
     var skippedClosed = r.skippedClosed || 0;
     var skippedRows = r.skippedRows || [];
     var suppressed = r.suppressed || 0;
+    var stageLimited = r.stageLimited || 0;
+    var excluded = suppressed + stageLimited;
 
     // ---- Summary chips ----
     var summary =
       '<div class="dq-summary">' +
-        dqChip(parsed + skipped + skippedClosed + suppressed, 'rows in file') +
+        dqChip(parsed + skipped + skippedClosed + excluded, 'rows in file') +
         dqChip(parsed, 'parsed') +
         dqChip(inRange, 'in ' + r.currentYear + '/' + r.nextYear, 'good') +
         dqChip(outside, 'other years', outside ? 'warn' : '') +
         dqChip(skipped, 'skipped', skipped ? 'bad' : '') +
-        (suppressed ? dqChip(suppressed, 'excluded owners') : '') +
+        (excluded ? dqChip(excluded, 'excluded rows') : '') +
       '</div>' +
       // Never let people vanish from a report without saying so.
       (suppressed ? '<p class="muted">' + suppressed + ' row' + (suppressed === 1 ? '' : 's') +
         ' excluded from every figure on this page: opportunities owned by ' +
         escapeHtml(PA.analytics.SUPPRESSED_OWNERS.map(titleCaseName).join(', ')) +
-        '. Edit <code>SUPPRESSED_OWNERS</code> in <code>js/analytics.js</code> to change this.</p>' : '');
+        '. Edit <code>SUPPRESSED_OWNERS</code> in <code>js/analytics.js</code> to change this.</p>' : '') +
+      (stageLimited ? '<p class="muted">' + stageLimited + ' further row' +
+        (stageLimited === 1 ? '' : 's') + ' excluded because ' +
+        escapeHtml(PA.analytics.STAGE_LIMITED_OWNERS.map(function (rule) {
+          return titleCaseName(rule.owner) + ' counts only at ' +
+            (rule.label || rule.keepStages.map(titleCaseName).join(' / '));
+        }).join('; ')) +
+        '. Edit <code>STAGE_LIMITED_OWNERS</code> in <code>js/analytics.js</code> to change this.</p>' : '');
 
     // ---- By-year distribution ----
     // Distant future years are collapsed into a single "N onwards" bucket so

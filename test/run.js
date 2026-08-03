@@ -101,15 +101,60 @@ const synthRow = (owner, stage, amount, close) => ({
   'Created Date': '01/01/2026', 'Last Modified Date': '01/06/2026', 'Lead Source': 'Web',
   'Next Step': '', 'Product Family': 'X', 'Region': 'EMEA'
 });
-// Finlay is now in SUPPRESSED_OWNERS, so every stage of his is dropped, not
-// just Awarded — only Jane's deal survives.
+/*
+ * Finlay is stage-limited: his Awarded and Closed Won work counts, everything
+ * earlier in his pipeline is dropped. Open pipeline here is Finlay's £50k
+ * Awarded plus Jane's £30k Awarded; his £40k Proposal is excluded.
+ */
 const resFin = PA.analytics.analyze([
   synthRow('Finlay Anderson', 'Awarded', '£50,000', '10/06/2026'),
   synthRow('Finlay Anderson', 'Proposal/Price Quote', '£40,000', '12/06/2026'),
+  synthRow('Finlay Anderson', 'Closed Won', '£70,000', '11/06/2026'),
+  synthRow('Finlay Anderson', 'Discovery', '£25,000', '13/06/2026'),
   synthRow('Jane Smith', 'Awarded', '£30,000', '14/06/2026')
 ], mapping, { currentYear: 2026 });
-approx('suppressed owner contributes nothing at any stage', resFin.years[2026].total, 30000);
-eq('suppressed owner rows all removed', resFin.years[2026].count, 1);
+approx('stage-limited owner: awarded counts', resFin.years[2026].total, 80000);
+eq('stage-limited owner: only awarded is open pipeline', resFin.years[2026].count, 2);
+eq('stage-limited owner: earlier stages dropped', resFin.stageLimited, 2);
+eq('stage-limited owner is not suppressed outright', resFin.suppressed, 0);
+
+// His won revenue must come through when closed deals are included.
+const resFinClosed = PA.analytics.analyze([
+  synthRow('Finlay Anderson', 'Awarded', '£50,000', '10/06/2026'),
+  synthRow('Finlay Anderson', 'Proposal/Price Quote', '£40,000', '12/06/2026'),
+  synthRow('Finlay Anderson', 'Closed Won', '£70,000', '11/06/2026'),
+  synthRow('Jane Smith', 'Awarded', '£30,000', '14/06/2026')
+], mapping, { currentYear: 2026, includeClosed: true });
+approx('stage-limited owner: won revenue counts', resFinClosed.years[2026].total, 150000);
+
+// And his won revenue reaches the Won-by-owner insight.
+const finInsights = PA.analytics.insightMetrics([
+  synthRow('Finlay Anderson', 'Closed Won', '£70,000', '11/06/2026'),
+  synthRow('Finlay Anderson', 'Proposal/Price Quote', '£40,000', '12/06/2026'),
+  synthRow('Jane Smith', 'Closed Won', '£30,000', '14/06/2026')
+], mapping, new Date(Date.UTC(2026, 6, 1)), {});
+approx('stage-limited owner: won revenue in insights', finInsights.wonTotal, 100000);
+eq('stage-limited owner appears in won-by-owner',
+   finInsights.wonByOwner.some(o => o.key === 'Finlay Anderson'), true);
+
+// His awarded work reaches the Awarded list.
+const finAwarded = PA.analytics.insightMetrics([
+  synthRow('Finlay Anderson', 'Awarded', '£50,000', '10/06/2026'),
+  synthRow('Jane Smith', 'Awarded', '£30,000', '14/06/2026')
+], mapping, new Date(Date.UTC(2026, 6, 1)), {});
+approx('stage-limited owner: awarded in the awarded list', finAwarded.awardedTotal, 80000);
+eq('stage-limited owner named in the awarded list',
+   finAwarded.awarded.some(a => a.owner === 'Finlay Anderson'), true);
+
+// The rule is configurable and defaults to nobody else being touched.
+eq('stage rule: proposal is dropped for Finlay',
+   PA.analytics.isStageLimitedOut('Finlay Anderson', 'Proposal/Price Quote'), true);
+eq('stage rule: awarded is kept', PA.analytics.isStageLimitedOut('Finlay Anderson', 'Awarded'), false);
+eq('stage rule: closed won is kept', PA.analytics.isStageLimitedOut('Finlay Anderson', 'Closed Won'), false);
+eq('stage rule: closed lost is dropped',
+   PA.analytics.isStageLimitedOut('Finlay Anderson', 'Closed Lost'), true);
+eq('stage rule: nobody else is affected',
+   PA.analytics.isStageLimitedOut('Jane Smith', 'Proposal/Price Quote'), false);
 
 // The awarded-only rule still exists for anyone NOT suppressed: it drops that
 // one stage and keeps the rest.
@@ -559,8 +604,10 @@ const foot = doc.footer(2, 3);
 eq('pdf footer shows page numbers', JSON.stringify(foot).indexOf('2 / 3') !== -1, true);
 
 // ---- Suppressed owners: ignored everywhere, in every metric ----
-const SUP = ['Maciej Stefanski', 'Joshua Mauger', 'Katherine Piper', 'Finlay Anderson'];
-eq('four owners are suppressed by default', PA.analytics.SUPPRESSED_OWNERS.length, 4);
+const SUP = ['Maciej Stefanski', 'Joshua Mauger', 'Katherine Piper'];
+eq('three owners are suppressed by default', PA.analytics.SUPPRESSED_OWNERS.length, 3);
+// Finlay is stage-limited, not suppressed — he still counts at Awarded / Closed Won.
+eq('Finlay is not suppressed', PA.analytics.isSuppressedOwner('Finlay Anderson'), false);
 SUP.forEach(n => eq('suppressed: ' + n, PA.analytics.isSuppressedOwner(n), true));
 // Name-order and punctuation variants must still match.
 eq('suppressed: "Piper, Katherine"', PA.analytics.isSuppressedOwner('Piper, Katherine'), true);
@@ -649,7 +696,7 @@ eq('stale baseline tiles ignore suppressed deals', staleDiff.count.delta, 0);
 approx('stale baseline "was" value excludes suppressed deals',
    staleDiff.total.prev, res.years[2026].total + res.years[2027].total);
 
-// Finlay is suppressed outright now, so none of his stages reach any figure.
+// Finlay is stage-limited: Awarded and Closed Won count, the rest is dropped.
 const finRow = (name, stage, amount) => Object.assign(
   synthRow('Finlay Anderson', stage, amount, '12/06/2026'), { 'Opportunity Name': name });
 const withFin = PA.analytics.analyze(table.rows.concat([
@@ -657,9 +704,10 @@ const withFin = PA.analytics.analyze(table.rows.concat([
   finRow('Fin Proposal', 'Proposal/Price Quote', '£400,000'),
   finRow('Fin Discovery', 'Discovery', '£300,000')
 ]), mapping, { currentYear: 2026, includeClosed: false });
-approx('suppressed owner adds nothing at any stage',
-   withFin.years[2026].total, res.years[2026].total);
-eq('all of a suppressed owner\'s rows are counted as excluded', withFin.suppressed, 3);
+approx('stage-limited owner adds only his awarded work',
+   withFin.years[2026].total, res.years[2026].total + 500000);
+eq('his other stages are counted as excluded', withFin.stageLimited, 2);
+eq('he is not counted as suppressed', withFin.suppressed, 0);
 
 /*
  * The awarded-exclusion boundary, exercised with an owner who is NOT

@@ -76,11 +76,12 @@
   var FORECAST_STAGES = ['discover', 'propos', 'award'];
   /*
    * Owners (lower-case substring) whose AWARDED pipeline is excluded.
-   * Note: anyone also listed in SUPPRESSED_OWNERS never reaches this check,
-   * because suppression drops their rows first. The entry is kept so the rule
-   * still applies if that person is later removed from the suppression list.
+   * Empty by default — the mechanism is kept because it is the natural place
+   * to drop a single stage for one owner, but nobody is excluded this way now.
+   * Note: anyone listed in SUPPRESSED_OWNERS never reaches this check, because
+   * suppression drops their rows first.
    */
-  var AWARDED_EXCLUDE_OWNERS = ['finlay'];
+  var AWARDED_EXCLUDE_OWNERS = [];
 
   /*
    * Owners whose opportunities are ignored completely. Unlike
@@ -97,13 +98,37 @@
   var SUPPRESSED_OWNERS = [
     'maciej stefanski',
     'joshua mauger',
-    'katherine piper',
-    // Finlay's Awarded pipeline was already excluded via AWARDED_EXCLUDE_OWNERS
-    // below; this removes his remaining stages too, so he is absent entirely.
-    // A single token, matching the AWARDED_EXCLUDE_OWNERS entry, so it still
-    // applies however the surname is exported.
-    'finlay'
+    'katherine piper'
   ];
+
+  /*
+   * Owners who count for CERTAIN STAGES ONLY. A middle ground between the two
+   * rules above: everything they own at another stage is dropped exactly as if
+   * they were suppressed, but the listed stages flow through normally.
+   *
+   * Finlay counts for won revenue and awarded work; his earlier-stage pipeline
+   * is not part of the forecast. Stage matching is case-insensitive substring,
+   * so 'award' catches "Awarded" and 'closed won' catches "Closed Won".
+   */
+  var STAGE_LIMITED_OWNERS = [
+    // `label` is what the Data Quality card shows; keepStages are the raw
+    // lower-case matchers, which do not read well on their own ("award").
+    { owner: 'finlay', keepStages: ['closed won', 'award'], label: 'Closed Won and Awarded' }
+  ];
+
+  /*
+   * True when a row belongs to a stage-limited owner AND sits at a stage that
+   * is not kept — i.e. the row should be dropped.
+   */
+  function isStageLimitedOut(owner, stage, list) {
+    var rules = list || STAGE_LIMITED_OWNERS;
+    var s = String(stage || '').toLowerCase();
+    for (var i = 0; i < rules.length; i++) {
+      if (!matchesOwnerList(owner, [rules[i].owner])) continue;
+      return !rules[i].keepStages.some(function (k) { return s.indexOf(k) !== -1; });
+    }
+    return false;
+  }
 
   /*
    * Owners whose deals form the ring-fenced Grid Scale project portfolio. These
@@ -208,6 +233,7 @@
     var skippedRows = [];
     var yearCounts = {};
     var suppressed = 0;
+    var stageLimited = 0;
 
     rows.forEach(function (r, idx) {
       // Suppressed owners drop out before anything else is looked at, so their
@@ -215,6 +241,12 @@
       // even the skipped-rows table or the year histogram.
       if (mapping.owner && isSuppressedOwner(r[mapping.owner], opts.suppressOwners)) {
         suppressed++;
+        return;
+      }
+      // Stage-limited owners: only the stages they are kept for get through.
+      if (mapping.owner && mapping.stage &&
+          isStageLimitedOut(r[mapping.owner], r[mapping.stage], opts.stageLimitedOwners)) {
+        stageLimited++;
         return;
       }
       var amount = PA.parse.cleanNumber(r[mapping.amount]);
@@ -310,7 +342,8 @@
       dayFirst: dayFirst,
       skippedRows: skippedRows,
       yearCounts: yearCounts,
-      suppressed: suppressed
+      suppressed: suppressed,
+      stageLimited: stageLimited
     };
   }
 
@@ -406,6 +439,7 @@
     result.skippedRows = built.skippedRows;
     result.yearCounts = built.yearCounts;
     result.suppressed = built.suppressed;
+    result.stageLimited = built.stageLimited;
     result.outOfRange = outOfRange;
     result.includeClosed = includeClosed;
     result.totalRecords = records.length;
@@ -894,6 +928,8 @@
     isExcludedAwarded: isExcludedAwarded,
     isSuppressedOwner: isSuppressedOwner,
     isGridScaleOwner: isGridScaleOwner,
+    isStageLimitedOut: isStageLimitedOut,
+    STAGE_LIMITED_OWNERS: STAGE_LIMITED_OWNERS,
     gridScaleMetrics: gridScaleMetrics,
     mwFromName: mwFromName,
     SUPPRESSED_OWNERS: SUPPRESSED_OWNERS,
