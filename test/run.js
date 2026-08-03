@@ -30,6 +30,9 @@ if (!sandbox.Papa && sandbox.window.Papa) sandbox.Papa = sandbox.window.Papa;
 if (!sandbox.Papa && sandbox.module && sandbox.module.exports) sandbox.Papa = sandbox.module.exports;
 
 load('js/parse.js');
+// mapping.js only touches the DOM inside renderPanel, which the tests never
+// call — autoDetect and requiredMissing are pure.
+load('js/mapping.js');
 load('js/analytics.js');
 load('js/compare.js');
 load('js/export.js');
@@ -688,6 +691,117 @@ eq('override suppresses someone else',
 eq('override releases the defaults',
    PA.analytics.buildRecords(supRows, mapping, { suppressOwners: ['nobody here'] })
      .records.length, 5);
+
+// ---- Grid Scale portfolio (ring-fenced) ----
+const gsRow = (name, stage, amount, close, type) => Object.assign(
+  synthRow('Maciej Stefanski', stage, amount, close),
+  { 'Opportunity Name': name, 'Product Family': type || 'Grid-Scale Battery Storage' });
+const gsRows = [
+  gsRow('Cubico - Frodsham Solar - Utility 45 MWp', 'Discovery', '£30,000,000', '31/12/2026'),
+  gsRow('Higher Witheven Solar Farm EPC PV Plant 47 MWp', 'Proposal/Price Quote', '£16,615,467', '30/09/2026'),
+  gsRow('Wokingham Solar Farm 20MW', 'Discovery', '£10,000,000', '28/11/2026'),
+  gsRow('LCR - 2 solar farms', 'Discovery', '£4,400,000', '31/12/2026'),
+  gsRow('Old Grid Job', 'Closed Won', '£9,000,000', '01/02/2026')
+];
+const gsAll = table.rows.concat(gsRows);
+const gs = PA.analytics.gridScaleMetrics(gsAll, mapping, { currentYear: 2026, dayFirst: true });
+
+eq('grid scale sees the owner despite suppression', gs.count, 4);
+eq('grid scale excludes closed projects',
+   gs.projects.some(p => p.stage === 'Closed Won'), false);
+approx('grid scale total value', gs.totalValue, 61015467);
+eq('grid scale lists every field the report needs',
+   ['name', 'type', 'stage', 'closeDate', 'amount', 'mw'].every(k => k in gs.projects[0]), true);
+eq('grid scale sorted by value', gs.projects[0].name.indexOf('Cubico') === 0, true);
+
+// Capacity read from the project name when no MW column is mapped.
+eq('mw parsed from "45 MWp"', PA.analytics.mwFromName('Frodsham Solar 45 MWp'), 45);
+eq('mw parsed from "20MW"', PA.analytics.mwFromName('Wokingham 20MW'), 20);
+eq('mw ignores a name with no capacity', PA.analytics.mwFromName('LCR - 2 solar farms'), null);
+approx('grid scale total capacity from names', gs.totalMw, 112);
+eq('capacity flagged as inferred', gs.mwInferredFromName, true);
+eq('capacity column not in use', gs.mwFromColumn, false);
+eq('projects with a known capacity', gs.projectsWithMw, 3);
+
+// The Amount (MW) column is authoritative when mapped, and is auto-detected.
+const autoMw = PA.mapping.autoDetect(
+  ['Opportunity Name', 'Amount', 'Amount (MW)', 'Close Date', 'Stage', 'Opportunity Owner']);
+eq('Amount (MW) auto-maps to capacity', autoMw.capacityMw, 'Amount (MW)');
+eq('Amount (MW) does not steal the value column', autoMw.amount, 'Amount');
+
+const mwMapping = Object.assign({}, mapping, { capacityMw: 'Amount (MW)' });
+const mwRows = gsRows.slice(0, 2).map((r, i) =>
+  Object.assign({}, r, { 'Amount (MW)': i === 0 ? '50' : '47' }));
+const gsMw = PA.analytics.gridScaleMetrics(mwRows, mwMapping, { currentYear: 2026, dayFirst: true });
+approx('mapped MW column overrides the name', gsMw.totalMw, 97);
+eq('mapped column not flagged as inferred', gsMw.mwInferredFromName, false);
+eq('mapped column reported as the source', gsMw.mwFromColumn, true);
+
+// A zero in that column means "not recorded" — report nothing, and never fall
+// back to a figure lifted out of the project name.
+const zeroRows = gsRows.slice(0, 3).map((r, i) =>
+  Object.assign({}, r, { 'Amount (MW)': i === 0 ? '0' : (i === 1 ? '' : '30') }));
+const gsZero = PA.analytics.gridScaleMetrics(zeroRows, mwMapping, { currentYear: 2026, dayFirst: true });
+eq('zero capacity is not reported', gsZero.projects.find(p => p.name.indexOf('Cubico') === 0).mw, null);
+eq('blank capacity is not reported', gsZero.projects.find(p => p.name.indexOf('Higher') === 0).mw, null);
+approx('zero and blank are excluded from the capacity total', gsZero.totalMw, 30);
+eq('only the recorded capacity counts', gsZero.projectsWithMw, 1);
+eq('a mapped column is never second-guessed from the name', gsZero.mwInferredFromName, false);
+
+// THE RING FENCE: adding £61m of Grid Scale work must not move any headline.
+const baseAll = PA.analytics.analyze(table.rows, mapping, { currentYear: 2026, includeClosed: false });
+const withGs = PA.analytics.analyze(gsAll, mapping, { currentYear: 2026, includeClosed: false });
+approx('ring fence: 2026 pipeline unchanged', withGs.years[2026].total, baseAll.years[2026].total);
+approx('ring fence: 2027 pipeline unchanged', withGs.years[2027].total, baseAll.years[2027].total);
+eq('ring fence: opportunity count unchanged', withGs.years[2026].count, baseAll.years[2026].count);
+const gsToday = new Date(Date.UTC(2026, 5, 15));
+approx('ring fence: health untouched',
+   PA.analytics.healthMetrics(gsAll, mapping, '', gsToday, {}).weightedForecast,
+   PA.analytics.healthMetrics(table.rows, mapping, '', gsToday, {}).weightedForecast);
+approx('ring fence: forecast untouched',
+   PA.analytics.forecastMetrics(gsAll, mapping, gsToday, {}).next365.total,
+   PA.analytics.forecastMetrics(table.rows, mapping, gsToday, {}).next365.total);
+eq('ring fence: owner absent from the filter list',
+   PA.analytics.distinctFilterValues(gsAll, mapping, { currentYear: 2026 })
+     .owner.indexOf('Maciej Stefanski'), -1);
+
+// Week-to-week movement for the portfolio, kept separate from the main diff.
+const gsSnapOpts = d => ({ currentYear: 2026, dayFirst: true, reportDate: d });
+const gsPrev = PA.compare.buildSnapshot(gsAll, mapping, gsSnapOpts('2026-06-12'));
+eq('snapshot carries the portfolio separately', gsPrev.gridScale.length, 4);
+eq('portfolio is not in the main opp list',
+   gsPrev.opps.some(o => o.owner === 'Maciej Stefanski'), false);
+approx('snapshot portfolio totals', gsPrev.gridScaleTotals.value, 61015467);
+
+const gsNext = gsAll.filter(r => r['Opportunity Name'].indexOf('LCR') !== 0)   // removed
+  .concat([gsRow('New Battery Park 60 MW', 'Discovery', '£25,000,000', '30/06/2027')]);
+const gsCurr = PA.compare.buildSnapshot(gsNext, mapping, gsSnapOpts('2026-08-02'));
+const gsDiff = PA.compare.diffSnapshots(gsPrev, gsCurr, {}).gridScale;
+eq('portfolio: an added project is detected', gsDiff.added.length, 1);
+eq('portfolio: the added project is named', gsDiff.added[0].name, 'New Battery Park 60 MW');
+eq('portfolio: a removed project is detected', gsDiff.removed.length, 1);
+eq('portfolio: the removed project is named', gsDiff.removed[0].name, 'LCR - 2 solar farms');
+eq('portfolio: project count movement', gsDiff.count.delta, 0);
+approx('portfolio: value movement', gsDiff.value.delta, 25000000 - 4400000);
+approx('portfolio: capacity movement', gsDiff.mw.delta, 60);
+
+// A stage or value change on a kept project is reported as a change, not churn.
+const gsRepriced = gsAll.map(r => r['Opportunity Name'].indexOf('Wokingham') === 0
+  ? Object.assign({}, r, { 'Stage': 'Proposal/Price Quote', 'Amount': '£12,500,000' }) : r);
+const gsChangeDiff = PA.compare.diffSnapshots(
+  gsPrev, PA.compare.buildSnapshot(gsRepriced, mapping, gsSnapOpts('2026-08-02')), {}).gridScale;
+eq('portfolio: a repriced project is not churn',
+   gsChangeDiff.added.length + gsChangeDiff.removed.length, 0);
+eq('portfolio: the change is reported', gsChangeDiff.changed.length, 1);
+eq('portfolio: change records the old stage', gsChangeDiff.changed[0].fromStage, 'Discovery');
+approx('portfolio: change records the old value', gsChangeDiff.changed[0].fromAmount, 10000000);
+
+// The main comparison must be unaffected by portfolio movement.
+const mainDiff = PA.compare.diffSnapshots(gsPrev, gsCurr, {});
+eq('portfolio movement does not touch the main lists',
+   mainDiff.added.length + mainDiff.removed.length +
+   mainDiff.closedWon.length + mainDiff.closedLost.length, 0);
+eq('portfolio movement does not touch the main tiles', mainDiff.total.delta, 0);
 
 // ---- Report-to-report comparison ----
 const snapOpts = (date) => ({ currentYear: 2026, dayFirst: true, reportDate: date });

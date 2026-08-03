@@ -305,6 +305,12 @@
       performance: currentPerformance(),
       forecast: currentForecast(),
       comparison: currentComparison(),
+      // Ring-fenced: computed from the raw rows on its own, never from the
+      // filtered/suppressed dataset the rest of the report uses.
+      gridScale: PA.analytics.gridScaleMetrics(state.table.rows, state.mapping, {
+        currentYear: state.currentYear,
+        dayFirst: state.dayFirst == null ? undefined : state.dayFirst
+      }),
       images: {
         stageCurrent: PA.charts.getImage('stageChart_current'),
         stageNext: PA.charts.getImage('stageChart_next'),

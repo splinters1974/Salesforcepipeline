@@ -383,6 +383,146 @@
       style: 'muted', margin: [0, 6, 0, 0] };
   }
 
+  // ---- Grid Scale projects (ring-fenced, always exactly one page) ----
+
+  // Enough rows to fill the page without spilling onto a second one. Anything
+  // beyond this is summarised rather than silently dropped.
+  var GS_MAX_ROWS = 22;
+
+  function mwText(v) {
+    if (v == null) return '—';
+    return (Math.round(v * 10) / 10).toLocaleString('en-GB') + ' MW';
+  }
+
+  // A proportional bar, used to show removed vs added against the portfolio.
+  function gsBar(w, color) {
+    return { canvas: [{ type: 'rect', x: 0, y: 0, w: Math.max(w, w > 0 ? 0.75 : 0), h: 9, color: color }] };
+  }
+
+  function gridScaleMovement(gsd) {
+    if (!gsd) return null;
+    var peak = Math.max(gsd.value.prev, gsd.value.curr, 1);
+    var scale = 150 / peak;
+    function cell(label, m, fmt) {
+      var d = m.delta;
+      var txt = d === 0 ? 'no change' : (d > 0 ? '+' : '-') + fmt(Math.abs(d));
+      return { width: '*', stack: [
+        { text: label, style: 'kpiLabel' },
+        { text: fmt(m.curr), style: 'kpiVal' },
+        { text: txt + ' vs ' + fmt(m.prev), style: 'muted', fontSize: 8,
+          color: d === 0 ? '#706e6b' : (d > 0 ? '#04844b' : '#ba0517') }
+      ] };
+    }
+    return {
+      stack: [
+        { text: 'Movement since the previous report', style: 'h3' },
+        {
+          columns: [
+            cell('Projects', gsd.count, function (v) { return String(v); }),
+            cell('Total value', gsd.value, money),
+            cell('Total capacity', gsd.mw, mwText)
+          ],
+          columnGap: 10, margin: [0, 2, 0, 6]
+        },
+        {
+          layout: 'noBorders',
+          table: { widths: ['auto', 150, 'auto'], body: [
+            [{ text: 'Added', style: 'bridgeLabel' }, gsBar(gsd.addedValue * scale, '#04844b'),
+             { text: gsd.added.length + ' · +' + money(gsd.addedValue), style: 'bridgeValue', color: '#04844b' }],
+            [{ text: 'Removed', style: 'bridgeLabel' }, gsBar(gsd.removedValue * scale, '#ba0517'),
+             { text: gsd.removed.length + ' · -' + money(gsd.removedValue), style: 'bridgeValue', color: '#ba0517' }]
+          ] },
+          margin: [0, 0, 0, 6]
+        }
+      ]
+    };
+  }
+
+  // Compact "what moved" lists — names only, so the page stays to one sheet.
+  function gridScaleMoved(gsd) {
+    if (!gsd) return null;
+    function names(list) {
+      return list.length
+        ? list.map(function (o) { return o.name + ' (' + money(o.amount) + ')'; }).join(' · ')
+        : 'None.';
+    }
+    var rows = [
+      [{ text: 'Added', style: 'gsMoveLabel', color: '#04844b' }, { text: names(gsd.added), style: 'gsMove' }],
+      [{ text: 'Removed', style: 'gsMoveLabel', color: '#ba0517' }, { text: names(gsd.removed), style: 'gsMove' }]
+    ];
+    if (gsd.changed.length) {
+      rows.push([{ text: 'Changed', style: 'gsMoveLabel', color: '#0176d3' },
+        { text: gsd.changed.map(function (c) {
+            var bits = [];
+            if (c.fromAmount !== c.amount) bits.push(money(c.fromAmount) + ' → ' + money(c.amount));
+            if (c.fromStage !== c.stage) bits.push(c.fromStage + ' → ' + c.stage);
+            if ((c.fromMw || 0) !== (c.mw || 0)) bits.push(mwText(c.fromMw) + ' → ' + mwText(c.mw));
+            return c.name + ' (' + bits.join(', ') + ')';
+          }).join(' · '), style: 'gsMove' }]);
+    }
+    return { layout: 'noBorders', table: { widths: ['auto', '*'], body: rows }, margin: [0, 2, 0, 0] };
+  }
+
+  function gridScalePage(gs, gsd) {
+    if (!gs) return [];
+
+    var shown = gs.projects.slice(0, GS_MAX_ROWS);
+    var body = [[th('Project'), th('Type'), th('MW', 'right'), th('Value', 'right'),
+                 th('Stage'), th('Forecast close', 'right')]];
+    shown.forEach(function (p) {
+      body.push([
+        { text: p.name, style: 'gsCell' },
+        { text: p.type || '—', style: 'gsCell' },
+        { text: p.mw == null ? '—' : mwText(p.mw), alignment: 'right', style: 'gsCell' },
+        { text: money(p.amount), alignment: 'right', style: 'gsCell' },
+        { text: p.stage, style: 'gsCell' },
+        { text: fmtDate(p.closeDate), alignment: 'right', style: 'gsCell' }
+      ]);
+    });
+    body.push([
+      { text: 'Total', bold: true }, {},
+      { text: mwText(gs.totalMw), alignment: 'right', bold: true },
+      { text: money(gs.totalValue), alignment: 'right', bold: true },
+      { text: gs.count + (gs.count === 1 ? ' project' : ' projects'), bold: true }, {}
+    ]);
+
+    var caveats = [];
+    if (gs.projects.length > GS_MAX_ROWS) {
+      caveats.push('Showing the ' + GS_MAX_ROWS + ' largest of ' + gs.projects.length +
+        ' projects; the totals cover all of them.');
+    }
+    if (!gs.mwFromColumn) {
+      caveats.push(gs.mwInferredFromName
+        ? 'Capacity read from project names — map a "Project Size (MW)" column for exact figures.'
+        : 'No capacity data: map a "Project Size (MW)" column, or include MW in project names.');
+    } else if (gs.projectsWithMw < gs.count) {
+      caveats.push((gs.count - gs.projectsWithMw) + ' project(s) have no MW value, so the capacity total is partial.');
+    }
+
+    return [
+      { text: 'Grid Scale Projects', style: 'h1', pageBreak: 'before' },
+      { text: 'Ring-fenced portfolio — these projects are excluded from every other ' +
+              'figure in this report. All open projects, any close date.', style: 'sub' },
+      {
+        columns: [
+          { width: '*', stack: [{ text: 'Projects', style: 'kpiLabel' },
+                                { text: String(gs.count), style: 'bigStat' }] },
+          { width: '*', stack: [{ text: 'Total value', style: 'kpiLabel' },
+                                { text: money(gs.totalValue), style: 'bigStat' }] },
+          { width: '*', stack: [{ text: 'Total capacity', style: 'kpiLabel' },
+                                { text: mwText(gs.totalMw), style: 'bigStat' }] }
+        ],
+        columnGap: 10, margin: [0, 4, 0, 10]
+      },
+      gridScaleMovement(gsd),
+      { text: 'Projects', style: 'h3' },
+      { style: 'tbl', table: { headerRows: 1, widths: ['*', 'auto', 'auto', 'auto', 'auto', 'auto'], body: body },
+        layout: TBL_LAYOUT },
+      gridScaleMoved(gsd),
+      caveats.length ? { text: caveats.join('  '), style: 'muted', margin: [0, 6, 0, 0] } : null
+    ].filter(Boolean);
+  }
+
   function buildDocDefinition(p) {
     var r = p.results, h = p.health, ins = p.insights, imgs = p.images || {}, meta = p.meta || {};
     var cur = r.currentYear, nxt = r.nextYear;
@@ -447,7 +587,10 @@
 
       // The segment / technology / stale-deals page was dropped from the
       // report. Those breakdowns remain on screen in the Pipeline Health card.
-    ].concat(comparisonPage(p.comparison)).filter(Boolean);
+    ].concat(comparisonPage(p.comparison))
+     // Ring-fenced Grid Scale portfolio, last in the document.
+     .concat(gridScalePage(p.gridScale, p.comparison && p.comparison.gridScale))
+     .filter(Boolean);
 
     return {
       pageSize: 'A4',
@@ -483,6 +626,9 @@
         bridgeValue: { fontSize: 9, alignment: 'right' },
         bridgeValueBold: { fontSize: 10, bold: true, alignment: 'right' },
         bridgeNet: { fontSize: 13, bold: true },
+        gsCell: { fontSize: 8 },
+        gsMove: { fontSize: 8, color: '#3e3e3c' },
+        gsMoveLabel: { fontSize: 8, bold: true },
         foot: { fontSize: 8, color: '#a8a8a8' }
       }
     };

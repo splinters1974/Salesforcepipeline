@@ -200,6 +200,21 @@
 
     var headline = totalsFor(opps, currentYear, nextYear);
 
+    /*
+     * The ring-fenced Grid Scale portfolio is snapshotted alongside, in its own
+     * array. It is never merged into `opps`, so it cannot leak into any
+     * headline figure or movement list — but it still gets week-to-week
+     * comparison of its own.
+     */
+    var gs = PA.analytics.gridScaleMetrics(rows, mapping, opts);
+    var gridScale = gs.projects.map(function (p) {
+      return {
+        oppId: p.oppId, name: p.name, owner: p.owner,
+        amount: p.amount, mw: p.mw, type: p.type, stage: p.stage,
+        closeDate: toIso(p.closeDate)
+      };
+    });
+
     var reportDate = opts.reportDate instanceof Date
       ? toIso(opts.reportDate)
       : (opts.reportDate ? String(opts.reportDate).slice(0, 10) : toIso(new Date()));
@@ -213,7 +228,49 @@
       count: headline.count,
       total: headline.total,
       weighted: headline.weighted,
-      opps: opps
+      opps: opps,
+      gridScale: gridScale,
+      gridScaleTotals: {
+        count: gs.count, value: gs.totalValue, mw: gs.totalMw
+      }
+    };
+  }
+
+  function sumBy(list, field) {
+    return (list || []).reduce(function (s, o) { return s + (o[field] || 0); }, 0);
+  }
+
+  /*
+   * Week-to-week movement for the Grid Scale portfolio, computed with the same
+   * matching passes as the main comparison (job number, then name, then a
+   * strict fingerprint) but over its own list, so the two never mix.
+   */
+  function diffGridScale(prev, curr) {
+    var prevList = (prev && prev.gridScale) || [];
+    var currList = (curr && curr.gridScale) || [];
+    var m = matchOpps(prevList, currList);
+    var added = m.unmatchedCurr.slice().sort(byValueDesc);
+    var removed = m.unmatchedPrev.slice().sort(byValueDesc);
+
+    var changed = [];
+    m.pairs.forEach(function (pair) {
+      var p = pair.prev, c = pair.curr;
+      if (p.amount !== c.amount || p.stage !== c.stage || (p.mw || 0) !== (c.mw || 0)) {
+        changed.push({
+          name: c.name, owner: c.owner, amount: c.amount, mw: c.mw, stage: c.stage,
+          fromAmount: p.amount, fromStage: p.stage, fromMw: p.mw,
+          closeDate: c.closeDate
+        });
+      }
+    });
+
+    return {
+      count: movement(prevList.length, currList.length),
+      value: movement(sumBy(prevList, 'amount'), sumBy(currList, 'amount')),
+      mw: movement(sumBy(prevList, 'mw'), sumBy(currList, 'mw')),
+      added: added, addedValue: sumBy(added, 'amount'), addedMw: sumBy(added, 'mw'),
+      removed: removed, removedValue: sumBy(removed, 'amount'), removedMw: sumBy(removed, 'mw'),
+      changed: changed
     };
   }
 
@@ -475,6 +532,8 @@
       // rather than silently dropped.
       notShown: notShown,
       bridge: bridge,
+      // Ring-fenced: its own movement, never folded into the figures above.
+      gridScale: diffGridScale(prev, curr),
       windowYears: [curr.currentYear, curr.nextYear],
       closedWon: closedWon,
       closedLost: closedLost,

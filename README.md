@@ -200,6 +200,46 @@ he is now suppressed outright, so every stage of his is gone. Anyone listed in
 their rows first — the `AWARDED_EXCLUDE_OWNERS` entry is kept so the narrower
 rule still applies if they are ever taken off the suppression list.
 
+## Grid Scale projects (ring-fenced)
+
+Deals owned by a **Grid Scale owner** (by default Maciej Stefanski — see
+`GRID_SCALE_OWNERS` in `js/analytics.js`) form a separate project portfolio.
+They appear on their **own final page of the PDF report and nowhere else**:
+never in the KPIs, health, performance, forecast, insights, the main report
+comparison, or the filter dropdowns.
+
+The ring fence works by those owners also being in `SUPPRESSED_OWNERS`, so the
+main analysis never sees them; the Grid Scale calculation is the single place
+that opts out of suppression and then keeps *only* those owners.
+
+The page shows:
+
+- **Projects, total value and total capacity (MW)** as headline figures.
+- **Movement since the previous report** — the change in each of those three,
+  plus what was added and removed, with proportional bars.
+- **Every project** by name, type, MW, value, sales stage and forecast close
+  date, with a totals row.
+- **Added / removed / changed** since the last report, listed by name. A change
+  records what it moved from (value, stage or MW).
+
+It is always **exactly one page**. Beyond 22 projects the table shows the
+largest 22 and says so — the totals still cover the whole portfolio.
+
+Unlike the main analysis it is **not limited to the current/following year**:
+every open project is listed with its own forecast close date, since the
+portfolio is small and long-dated.
+
+### Capacity (MW)
+
+Read from the **Amount (MW)** column, which is auto-detected. A **zero or blank
+is treated as "not recorded"** — it shows as `—` and is left out of the capacity
+total, rather than reported as 0 MW. The page says how many projects lack a
+figure so a partial total is never mistaken for a complete one.
+
+If a report carries no capacity column at all, the figure falls back to reading
+it out of the project name (`EPC PV Plant 47 MWp`), and the page states that it
+was inferred. A mapped column is never second-guessed from the name.
+
 ## Column mapping (optional fields)
 
 Beyond the required Amount / Close Date / Stage, you can map: Probability, Owner,
@@ -236,6 +276,8 @@ Two buttons sit in the dashboard controls:
      opportunities / pipeline / weighted forecast, the old-vs-new pipeline
      bridge, and the deal-level movement lists. Only when an earlier report is
      stored to compare against.
+  4. **Grid Scale Projects** — the ring-fenced portfolio, always exactly one
+     page, always last. See *Grid Scale projects* above.
 
   The **by segment / by technology / stale deals** breakdowns are on screen
   only (Pipeline Health card) — they are deliberately not in the PDF.

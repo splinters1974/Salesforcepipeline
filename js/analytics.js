@@ -105,19 +105,48 @@
     'finlay'
   ];
 
+  /*
+   * Owners whose deals form the ring-fenced Grid Scale project portfolio. These
+   * people are also in SUPPRESSED_OWNERS, so their deals appear ONLY in that
+   * section and never in the headline pipeline — the ring fence works by the
+   * Grid Scale calculation being the one place that opts out of suppression.
+   */
+  var GRID_SCALE_OWNERS = ['maciej stefanski'];
+
+  /*
+   * Generation capacity in MW. Prefers a mapped column; otherwise reads it out
+   * of the project name, which is where it tends to live in practice ("EPC PV
+   * Plant 47 MWp"). An inferred figure is flagged so the report can say so
+   * rather than presenting a guess as data.
+   */
+  function mwFromName(name) {
+    var m = /(\d+(?:[.,]\d+)?)\s*mw/i.exec(String(name == null ? '' : name));
+    if (!m) return null;
+    var n = parseFloat(String(m[1]).replace(',', '.'));
+    return isNaN(n) ? null : n;
+  }
+
   // Split a name into comparable lower-case tokens, ignoring punctuation.
   function nameTokens(s) {
     return String(s == null ? '' : s).toLowerCase()
       .replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
   }
 
-  function isSuppressedOwner(owner, list) {
+  function matchesOwnerList(owner, list) {
     var have = nameTokens(owner);
     if (!have.length) return false;
-    return (list || SUPPRESSED_OWNERS).some(function (name) {
+    return list.some(function (name) {
       var want = nameTokens(name);
       return want.length && want.every(function (t) { return have.indexOf(t) !== -1; });
     });
+  }
+
+  function isSuppressedOwner(owner, list) {
+    return matchesOwnerList(owner, list || SUPPRESSED_OWNERS);
+  }
+
+  function isGridScaleOwner(owner, list) {
+    return matchesOwnerList(owner, list || GRID_SCALE_OWNERS);
   }
 
   // True when a record is an Awarded deal owned by an excluded owner (Finlay).
@@ -221,6 +250,22 @@
       var region = mapping.region ? (r[mapping.region] || '—') : '—';
       var name = mapping.name ? (r[mapping.name] || '') : '';
       var oppId = mapping.oppId ? (r[mapping.oppId] || '') : '';
+
+      /*
+       * Capacity. The Amount (MW) column is authoritative when mapped — a
+       * blank or zero there means "not recorded", so nothing is reported
+       * rather than a misleading 0 MW, and the name is NOT second-guessed.
+       * Reading it out of the project name is only a fallback for reports
+       * that carry no capacity column at all.
+       */
+      var mw = null, mwInferred = false;
+      if (mapping.capacityMw) {
+        var mwRaw = PA.parse.cleanNumber(r[mapping.capacityMw]);
+        if (!isNaN(mwRaw) && mwRaw > 0) mw = mwRaw;
+      } else {
+        mw = mwFromName(name);
+        mwInferred = mw != null;
+      }
       var lastModified = mapping.lastModified
         ? PA.parse.parseDate(r[mapping.lastModified], dayFirst) : null;
       var created = mapping.created
@@ -244,6 +289,8 @@
         region: region,
         name: name,
         oppId: oppId,
+        mw: mw,
+        mwInferred: mwInferred,
         lastModified: lastModified,
         created: created,
         nextStep: nextStep,
@@ -363,6 +410,63 @@
     result.includeClosed = includeClosed;
     result.totalRecords = records.length;
     return result;
+  }
+
+  /*
+   * The ring-fenced Grid Scale portfolio: every open deal owned by a Grid Scale
+   * owner, at any close date, with capacity totals.
+   *
+   * This is the ONLY calculation that opts out of owner suppression, and it
+   * keeps nothing but Grid Scale owners — so these deals appear here and
+   * nowhere else. Nothing in this result feeds the headline pipeline.
+   *
+   * Unlike the main analysis it is not limited to the current/following year:
+   * a project portfolio is small and long-dated, so every open project is
+   * listed with its own forecast close date.
+   */
+  function gridScaleMetrics(rows, mapping, opts) {
+    opts = opts || {};
+    var built = buildRecords(rows, mapping,
+      Object.assign({}, opts, { suppressOwners: [] }));
+    var owners = opts.gridScaleOwners || GRID_SCALE_OWNERS;
+    var recs = built.records.filter(function (r) {
+      return isGridScaleOwner(r.owner, owners) && !r.closed;
+    });
+
+    var totalValue = 0, totalWeighted = 0, totalMw = 0, withMw = 0, anyInferred = false;
+    recs.forEach(function (r) {
+      totalValue += r.amount;
+      totalWeighted += r.weighted;
+      if (r.mw != null) { totalMw += r.mw; withMw++; if (r.mwInferred) anyInferred = true; }
+    });
+
+    var projects = recs.map(function (r) {
+      return {
+        name: r.name || '(unnamed)',
+        oppId: r.oppId || '',
+        owner: r.owner,
+        amount: r.amount,
+        weighted: r.weighted,
+        mw: r.mw,
+        mwInferred: r.mwInferred,
+        type: r.product,
+        stage: r.stage,
+        closeDate: r.date,
+        year: r.year
+      };
+    }).sort(function (a, b) { return b.amount - a.amount; });
+
+    return {
+      count: projects.length,
+      totalValue: totalValue,
+      totalWeighted: totalWeighted,
+      totalMw: totalMw,
+      projectsWithMw: withMw,
+      mwFromColumn: !!mapping.capacityMw,
+      mwInferredFromName: anyInferred,
+      byStage: byDesc(groupSum(recs, function (r) { return r.stage; })),
+      projects: projects
+    };
   }
 
   // Map a product/product-family value to one of the Ameresco segments.
@@ -789,7 +893,11 @@
     applyFilters: applyFilters,
     isExcludedAwarded: isExcludedAwarded,
     isSuppressedOwner: isSuppressedOwner,
+    isGridScaleOwner: isGridScaleOwner,
+    gridScaleMetrics: gridScaleMetrics,
+    mwFromName: mwFromName,
     SUPPRESSED_OWNERS: SUPPRESSED_OWNERS,
+    GRID_SCALE_OWNERS: GRID_SCALE_OWNERS,
     distinctFilterValues: distinctFilterValues,
     coverage: coverage,
     segmentFor: segmentFor,

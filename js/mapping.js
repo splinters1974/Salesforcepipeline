@@ -42,6 +42,11 @@
       hints: ['region', 'territory', 'segment', 'area', 'geo', 'market'] },
     { key: 'name', label: 'Opportunity Name', required: false,
       hints: ['opportunity name', 'opportunity', 'name', 'deal name'] },
+    // Generation capacity, for the Grid Scale project section. When no column
+    // is mapped the figure is read out of the project name instead ("47 MWp").
+    { key: 'capacityMw', label: 'Amount (MW)', required: false,
+      hints: ['amount mw', 'capacity mw', 'size mw', 'project size mw', 'mwp',
+              'mw capacity', 'capacity', 'project size', 'mw'] },
     // Used only to match the same deal across two reports. Deliberately
     // narrow hints — a bare "id" would happily claim columns like "Bid Value".
     // A job/project number counts: it identifies the deal just as well, even
