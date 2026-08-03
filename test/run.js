@@ -519,6 +519,90 @@ docHas('segments/stale page', 'Segments & Stale deals — 2026');
 const foot = doc.footer(2, 3);
 eq('pdf footer shows page numbers', JSON.stringify(foot).indexOf('2 / 3') !== -1, true);
 
+// ---- Suppressed owners: ignored everywhere, in every metric ----
+const SUP = ['Maciej Stefanski', 'Joshua Mauger', 'Katherine Piper'];
+eq('three owners are suppressed by default', PA.analytics.SUPPRESSED_OWNERS.length, 3);
+SUP.forEach(n => eq('suppressed: ' + n, PA.analytics.isSuppressedOwner(n), true));
+// Name-order and punctuation variants must still match.
+eq('suppressed: "Piper, Katherine"', PA.analytics.isSuppressedOwner('Piper, Katherine'), true);
+eq('suppressed: middle initial', PA.analytics.isSuppressedOwner('Maciej J Stefanski'), true);
+eq('suppressed: lower case', PA.analytics.isSuppressedOwner('joshua mauger'), true);
+// Near-misses must NOT be suppressed.
+eq('not suppressed: Katherine Piperson', PA.analytics.isSuppressedOwner('Katherine Piperson'), false);
+eq('not suppressed: surname only', PA.analytics.isSuppressedOwner('Piper'), false);
+eq('not suppressed: different Joshua', PA.analytics.isSuppressedOwner('Joshua Smith'), false);
+eq('not suppressed: blank owner', PA.analytics.isSuppressedOwner(''), false);
+eq('not suppressed: ordinary rep', PA.analytics.isSuppressedOwner('Jane Smith'), false);
+
+// A report containing their deals must produce identical figures to one without.
+const supRows = [
+  synthRow('Maciej Stefanski', 'Discovery', '£30,000,000', '31/12/2026'),
+  synthRow('Joshua Mauger', 'Proposal/Price Quote', '£1,250,000', '31/08/2026'),
+  synthRow('Katherine Piper', 'Discovery', '£5,000', '31/12/2026'),
+  synthRow('Maciej Stefanski', 'Closed Won', '£16,615,467', '30/09/2026'),
+  synthRow('Katherine Piper', 'Awarded', '£400,000', '15/07/2026')
+];
+const withSup = PA.analytics.analyze(table.rows.concat(supRows), mapping,
+  { currentYear: 2026, includeClosed: false });
+approx('suppressed deals add nothing to pipeline', withSup.years[2026].total, res.years[2026].total);
+approx('suppressed deals add nothing to weighted', withSup.years[2026].weighted, res.years[2026].weighted);
+eq('suppressed deals add nothing to the count', withSup.years[2026].count, res.years[2026].count);
+eq('suppressed rows are counted for transparency', withSup.suppressed, 5);
+eq('unsuppressed report reports zero suppressed', res.suppressed, 0);
+// Even with closed deals included, their Closed Won must not appear.
+const withSupClosed = PA.analytics.analyze(table.rows.concat(supRows), mapping,
+  { currentYear: 2026, includeClosed: true });
+approx('suppressed closed-won stays out', withSupClosed.years[2026].total, resClosed.years[2026].total);
+
+// They must not appear as a filter option or in the salesperson dropdown.
+const supVals = PA.analytics.distinctFilterValues(table.rows.concat(supRows), mapping,
+  { currentYear: 2026 });
+SUP.forEach(n => eq('not offered as a filter: ' + n, supVals.owner.indexOf(n), -1));
+
+// Every downstream metric must be untouched by their presence.
+const supAll = table.rows.concat(supRows);
+const supToday = new Date(Date.UTC(2026, 5, 15));
+const hA = PA.analytics.healthMetrics(table.rows, mapping, '', supToday, {});
+const hB = PA.analytics.healthMetrics(supAll, mapping, '', supToday, {});
+approx('health: weighted forecast unchanged', hB.weightedForecast, hA.weightedForecast);
+eq('health: segment count unchanged', hB.segments.length, hA.segments.length);
+eq('health: stale count unchanged', hB.stale.count, hA.stale.count);
+const iA = PA.analytics.insightMetrics(table.rows, mapping, supToday, {});
+const iB = PA.analytics.insightMetrics(supAll, mapping, supToday, {});
+approx('insights: won total unchanged', iB.wonTotal, iA.wonTotal);
+eq('insights: awarded list unchanged', iB.awarded.length, iA.awarded.length);
+eq('insights: top-10 unchanged', iB.topProposed.length, iA.topProposed.length);
+eq('insights: suppressed owner absent from won-by-owner',
+   iB.wonByOwner.some(o => SUP.indexOf(o.key) !== -1), false);
+const pA = PA.analytics.performanceMetrics(table.rows, mapping, supToday, {});
+const pB = PA.analytics.performanceMetrics(supAll, mapping, supToday, {});
+eq('performance: won count unchanged', pB.wonCount, pA.wonCount);
+const fA = PA.analytics.forecastMetrics(table.rows, mapping, supToday, {});
+const fB = PA.analytics.forecastMetrics(supAll, mapping, supToday, {});
+approx('forecast: 365-day total unchanged', fB.next365.total, fA.next365.total);
+approx('forecast: strategic total unchanged', fB.strategic.total, fA.strategic.total);
+
+// The comparison must not see them either — a suppressed deal appearing or
+// closing between two reports is a non-event.
+const supPrev = PA.compare.buildSnapshot(table.rows, mapping,
+  { currentYear: 2026, dayFirst: true, reportDate: '2026-06-12' });
+const supCurr = PA.compare.buildSnapshot(supAll, mapping,
+  { currentYear: 2026, dayFirst: true, reportDate: '2026-08-02' });
+const supDiff = PA.compare.diffSnapshots(supPrev, supCurr, {});
+eq('comparison ignores suppressed arrivals', supDiff.added.length, 0);
+eq('comparison ignores suppressed closures', supDiff.closedWon.length, 0);
+eq('comparison tiles unmoved by suppressed deals', supDiff.count.delta, 0);
+eq('snapshot excludes suppressed owners',
+   supCurr.opps.some(o => SUP.indexOf(o.owner) !== -1), false);
+
+// An override list keeps the rule configurable.
+eq('override suppresses someone else',
+   PA.analytics.buildRecords(table.rows, mapping, { suppressOwners: ['jane smith'] })
+     .records.some(r => r.owner === 'Jane Smith'), false);
+eq('override releases the defaults',
+   PA.analytics.buildRecords(supRows, mapping, { suppressOwners: ['nobody here'] })
+     .records.length, 5);
+
 // ---- Report-to-report comparison ----
 const snapOpts = (date) => ({ currentYear: 2026, dayFirst: true, reportDate: date });
 const clone = (rows) => JSON.parse(JSON.stringify(rows));

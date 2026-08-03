@@ -77,6 +77,39 @@
   // Owners (lower-case substring) whose AWARDED pipeline is excluded.
   var AWARDED_EXCLUDE_OWNERS = ['finlay'];
 
+  /*
+   * Owners whose opportunities are ignored completely. Unlike
+   * AWARDED_EXCLUDE_OWNERS — which only drops a single stage — these people are
+   * suppressed from every calculation, count and list: KPIs, health, insights,
+   * performance, forecast, the report comparison and the filter dropdowns.
+   * Their rows are counted once in the Data Quality card so the suppression is
+   * visible rather than silent.
+   *
+   * Each entry is a set of name tokens; a row matches when the owner contains
+   * ALL of them, so "Katherine Piper", "Piper, Katherine" and "Katherine J
+   * Piper" all match while "Katherine Piperson" does not.
+   */
+  var SUPPRESSED_OWNERS = [
+    'maciej stefanski',
+    'joshua mauger',
+    'katherine piper'
+  ];
+
+  // Split a name into comparable lower-case tokens, ignoring punctuation.
+  function nameTokens(s) {
+    return String(s == null ? '' : s).toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean);
+  }
+
+  function isSuppressedOwner(owner, list) {
+    var have = nameTokens(owner);
+    if (!have.length) return false;
+    return (list || SUPPRESSED_OWNERS).some(function (name) {
+      var want = nameTokens(name);
+      return want.length && want.every(function (t) { return have.indexOf(t) !== -1; });
+    });
+  }
+
   // True when a record is an Awarded deal owned by an excluded owner (Finlay).
   function isExcludedAwarded(rec, excludeOwners) {
     excludeOwners = excludeOwners || AWARDED_EXCLUDE_OWNERS;
@@ -135,8 +168,16 @@
     var skippedClosed = 0;
     var skippedRows = [];
     var yearCounts = {};
+    var suppressed = 0;
 
     rows.forEach(function (r, idx) {
+      // Suppressed owners drop out before anything else is looked at, so their
+      // deals reach no calculation, count or list anywhere in the app — not
+      // even the skipped-rows table or the year histogram.
+      if (mapping.owner && isSuppressedOwner(r[mapping.owner], opts.suppressOwners)) {
+        suppressed++;
+        return;
+      }
       var amount = PA.parse.cleanNumber(r[mapping.amount]);
       var date = PA.parse.parseDate(r[mapping.closeDate], dayFirst);
       var badAmount = isNaN(amount);
@@ -211,7 +252,8 @@
       skippedClosed: skippedClosed,
       dayFirst: dayFirst,
       skippedRows: skippedRows,
-      yearCounts: yearCounts
+      yearCounts: yearCounts,
+      suppressed: suppressed
     };
   }
 
@@ -306,6 +348,7 @@
     result.dayFirst = built.dayFirst;
     result.skippedRows = built.skippedRows;
     result.yearCounts = built.yearCounts;
+    result.suppressed = built.suppressed;
     result.outOfRange = outOfRange;
     result.includeClosed = includeClosed;
     result.totalRecords = records.length;
@@ -735,6 +778,8 @@
     forecastMetrics: forecastMetrics,
     applyFilters: applyFilters,
     isExcludedAwarded: isExcludedAwarded,
+    isSuppressedOwner: isSuppressedOwner,
+    SUPPRESSED_OWNERS: SUPPRESSED_OWNERS,
     distinctFilterValues: distinctFilterValues,
     coverage: coverage,
     segmentFor: segmentFor,

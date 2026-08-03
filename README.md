@@ -166,6 +166,27 @@ The **Awarded** stage is treated as open pipeline (not closed) but carries a hig
 win weighting (90% by default), so it shows in each year's value *and* weighted
 charts.
 
+## Excluded owners
+
+Opportunities owned by certain people are **ignored completely**. Their rows are
+dropped the moment the file is read, so they reach no calculation, count or list
+anywhere: KPIs, Pipeline Health, Sales Performance, Forecast Outlook, Pipeline
+Insights, the Report Comparison, the exports, and the filter dropdowns (they are
+not offered as a salesperson to filter by).
+
+By default that list is **Maciej Stefanski, Joshua Mauger and Katherine Piper**.
+Edit `SUPPRESSED_OWNERS` at the top of `js/analytics.js` to change it.
+
+Matching is on name tokens, so `Katherine Piper`, `Piper, Katherine` and
+`Katherine J Piper` all match, while `Katherine Piperson` does not.
+
+So the exclusion is never silent, the **Data Quality** card counts the dropped
+rows in an *excluded owners* chip and names who was excluded — the row totals
+still add up (`rows in file` = parsed + skipped + excluded).
+
+This is distinct from `AWARDED_EXCLUDE_OWNERS`, which only drops one *stage*
+(Awarded) for the owners it lists, rather than the person entirely.
+
 ## Column mapping (optional fields)
 
 Beyond the required Amount / Close Date / Stage, you can map: Probability, Owner,
