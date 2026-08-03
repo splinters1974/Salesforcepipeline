@@ -226,6 +226,16 @@ main { padding: 24px 0 48px; }
 .map-select:focus { outline: none; border-color: var(--current); box-shadow: 0 0 0 1px var(--current); }
 
 /* Dashboard controls */
+/*
+ * The two cards that host filter popovers sit above the cards below them.
+ * Needed because .card's entrance animation uses fill-mode: both, so the final
+ * `transform: translateY(0)` sticks and every card keeps a stacking context —
+ * which otherwise traps a popover inside its own card and lets the next card
+ * paint over it, swallowing the clicks.
+ */
+.dashboard-controls { z-index: 5; }
+.filters-card { z-index: 4; }
+
 .dashboard-controls {
   display: flex;
   gap: 22px;
@@ -249,13 +259,14 @@ main { padding: 24px 0 48px; }
   background: #f3f2f2;
   border: 1px solid var(--border);
 }
-.salesperson-control select {
-  margin-left: 2px;
-  font-weight: 600;
+/* The salesperson control hosts the same multi-select as the other filters,
+   styled to stay the prominent one. */
+.salesperson-control .ms-btn {
+  font-weight: 700;
   color: var(--current);
-  background: #fff;
-  border: 1px solid var(--border);
+  border-color: var(--border);
 }
+.salesperson-control .ms-btn:hover { border-color: var(--current); }
 .checkbox { display: flex; align-items: center; gap: 8px; font-weight: 500; cursor: pointer; }
 .checkbox input { width: 16px; height: 16px; accent-color: var(--current); }
 .export-actions { margin-left: auto; display: flex; gap: 10px; }

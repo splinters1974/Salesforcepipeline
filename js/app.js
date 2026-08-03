@@ -69,7 +69,7 @@
     el.dataQuality = $('dataQualityCard');
     el.status = $('statusBar');
     el.granularity = $('granularitySelect');
-    el.salespersonSelect = $('salespersonSelect');
+    el.salespersonSlot = $('salespersonSlot');
     el.includeClosed = $('includeClosedToggle');
     el.targetInput = $('targetInput');
     el.nextTargetInput = $('nextTargetInput');
@@ -119,7 +119,6 @@
       state.includeClosed = el.includeClosed.checked;
       recompute(); render(); saveState();
     });
-    el.salespersonSelect.addEventListener('change', onSalespersonChange);
     // Coverage targets: re-render just the health card, no CSV re-parse.
     el.targetInput.addEventListener('input', function () {
       state.target = el.targetInput.value;
@@ -609,7 +608,7 @@
     el.granularity.value = 'quarter';
     el.fileInput.value = '';
     el.filtersRow.innerHTML = '';
-    el.salespersonSelect.innerHTML = '<option value="">All salespeople</option>';
+    el.salespersonSlot.innerHTML = '';
     el.mappingPanel.innerHTML = '';
     el.mappingSection.style.display = 'none';
     el.dashboard.style.display = 'none';
@@ -630,19 +629,20 @@
     if (!state.table || !state.mapping) return;
     if (PA.mapping.requiredMissing(state.mapping).length) {
       el.filtersRow.innerHTML = '';
-      el.salespersonSelect.innerHTML = '<option value="">All salespeople</option>';
+      el.salespersonSlot.innerHTML = '';
       return;
     }
     var vals = PA.analytics.distinctFilterValues(state.table.rows, state.mapping, { currentYear: state.currentYear });
 
-    // Salesperson dropdown (single person) — drives state.filters.owner.
+    // Salesperson — the same multi-select as the other dimensions, so several
+    // people can be viewed together, but kept in its own prominent slot.
     state.filters.owner = (state.filters.owner || []).filter(function (v) { return vals.owner.indexOf(v) !== -1; });
-    var selectedPerson = state.filters.owner.length === 1 ? state.filters.owner[0] : '';
-    el.salespersonSelect.innerHTML = '<option value="">All salespeople</option>' +
-      vals.owner.map(function (o) {
-        return '<option value="' + escapeHtml(o) + '"' + (o === selectedPerson ? ' selected' : '') + '>' +
-          escapeHtml(o) + '</option>';
-      }).join('');
+    el.salespersonSlot.innerHTML = '';
+    createMultiSelect(el.salespersonSlot, '', vals.owner, state.filters.owner,
+      function (selected) {
+        state.filters.owner = selected;
+        recompute(); render(); saveState();
+      });
 
     // The remaining dimensions as multi-select pills.
     el.filtersRow.innerHTML = '';
@@ -655,12 +655,6 @@
       });
     });
     updateFiltersSummary();
-  }
-
-  function onSalespersonChange() {
-    var val = el.salespersonSelect.value;
-    state.filters.owner = val ? [val] : [];
-    recompute(); render(); saveState();
   }
 
   // The currently selected single salesperson, or null when viewing everyone.
@@ -679,7 +673,14 @@
     pop.style.display = 'none';
     var chosen = selected.slice();
 
-    function refreshLabel() { btn.textContent = label + ': ' + (chosen.length ? chosen.length + ' selected' : 'All'); }
+    function refreshLabel() {
+      // An empty label means the surrounding control already names the
+      // dimension — don't repeat it on the button.
+      btn.textContent = (label ? label + ': ' : '') + (
+        chosen.length === 0 ? 'All'
+        : chosen.length === 1 ? (chosen[0] || '(blank)')
+        : chosen.length + ' selected');
+    }
     refreshLabel();
 
     values.forEach(function (v) {
@@ -744,7 +745,6 @@
 
   function clearFilters() {
     FILTER_DIMS.forEach(function (d) { state.filters[d[0]] = []; });
-    el.salespersonSelect.value = '';
     populateFilters(); recompute(); render(); saveState();
   }
 
