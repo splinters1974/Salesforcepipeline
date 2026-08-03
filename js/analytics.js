@@ -98,36 +98,43 @@
   var SUPPRESSED_OWNERS = [
     'maciej stefanski',
     'joshua mauger',
-    'katherine piper'
+    'katherine piper',
+    // Suppressed from the pipeline, but see REVENUE_ONLY_OWNERS below — his
+    // won and awarded revenue is added back into those two views alone.
+    'finlay'
   ];
 
   /*
-   * Owners who count for CERTAIN STAGES ONLY. A middle ground between the two
-   * rules above: everything they own at another stage is dropped exactly as if
-   * they were suppressed, but the listed stages flow through normally.
+   * Owners who are suppressed from the pipeline — total pipeline, weighted
+   * forecast, health, forecast outlook, the top-10 list, the report comparison
+   * and the filter dropdowns — but whose CLOSED WON and AWARDED revenue still
+   * counts in the two revenue views: "Won revenue by owner" and "Awarded
+   * opportunities".
    *
-   * Finlay counts for won revenue and awarded work; his earlier-stage pipeline
-   * is not part of the forecast. Stage matching is case-insensitive substring,
-   * so 'award' catches "Awarded" and 'closed won' catches "Closed Won".
+   * They are ordinary members of SUPPRESSED_OWNERS, so everything excludes them
+   * by default; insightMetrics is the single place that adds their revenue
+   * back. Nothing else can pick them up by accident.
    */
-  var STAGE_LIMITED_OWNERS = [
-    // `label` is what the Data Quality card shows; keepStages are the raw
-    // lower-case matchers, which do not read well on their own ("award").
-    { owner: 'finlay', keepStages: ['closed won', 'award'], label: 'Closed Won and Awarded' }
-  ];
+  var REVENUE_ONLY_OWNERS = ['finlay'];
+  var REVENUE_ONLY_STAGES = ['closed won', 'award'];
 
   /*
-   * True when a row belongs to a stage-limited owner AND sits at a stage that
-   * is not kept — i.e. the row should be dropped.
+   * The Closed Won / Awarded rows belonging to revenue-only owners. Built by
+   * opting out of suppression and then keeping nothing but those owners at
+   * those stages, so it can be added to the revenue views without any risk of
+   * the rest of their pipeline coming with it.
    */
-  function isStageLimitedOut(owner, stage, list) {
-    var rules = list || STAGE_LIMITED_OWNERS;
-    var s = String(stage || '').toLowerCase();
-    for (var i = 0; i < rules.length; i++) {
-      if (!matchesOwnerList(owner, [rules[i].owner])) continue;
-      return !rules[i].keepStages.some(function (k) { return s.indexOf(k) !== -1; });
-    }
-    return false;
+  function revenueOnlyRecords(rows, mapping, options) {
+    options = options || {};
+    var owners = options.revenueOnlyOwners || REVENUE_ONLY_OWNERS;
+    if (!owners.length) return [];
+    var built = buildRecords(rows, mapping,
+      Object.assign({}, options, { suppressOwners: [] }));
+    return built.records.filter(function (r) {
+      if (!matchesOwnerList(r.owner, owners)) return false;
+      var s = String(r.stage).toLowerCase();
+      return REVENUE_ONLY_STAGES.some(function (k) { return s.indexOf(k) !== -1; });
+    });
   }
 
   /*
@@ -233,7 +240,6 @@
     var skippedRows = [];
     var yearCounts = {};
     var suppressed = 0;
-    var stageLimited = 0;
 
     rows.forEach(function (r, idx) {
       // Suppressed owners drop out before anything else is looked at, so their
@@ -241,12 +247,6 @@
       // even the skipped-rows table or the year histogram.
       if (mapping.owner && isSuppressedOwner(r[mapping.owner], opts.suppressOwners)) {
         suppressed++;
-        return;
-      }
-      // Stage-limited owners: only the stages they are kept for get through.
-      if (mapping.owner && mapping.stage &&
-          isStageLimitedOut(r[mapping.owner], r[mapping.stage], opts.stageLimitedOwners)) {
-        stageLimited++;
         return;
       }
       var amount = PA.parse.cleanNumber(r[mapping.amount]);
@@ -342,8 +342,7 @@
       dayFirst: dayFirst,
       skippedRows: skippedRows,
       yearCounts: yearCounts,
-      suppressed: suppressed,
-      stageLimited: stageLimited
+      suppressed: suppressed
     };
   }
 
@@ -439,7 +438,6 @@
     result.skippedRows = built.skippedRows;
     result.yearCounts = built.yearCounts;
     result.suppressed = built.suppressed;
-    result.stageLimited = built.stageLimited;
     result.outOfRange = outOfRange;
     result.includeClosed = includeClosed;
     result.totalRecords = records.length;
@@ -676,6 +674,17 @@
 
     var recs = applyFilters(buildRecords(rows, mapping, options).records, options.filters);
 
+    /*
+     * Revenue-only owners are suppressed from `recs`, so their Closed Won and
+     * Awarded rows are pulled in separately and used for the won / awarded
+     * views ONLY. Everything else on this card keeps working off `recs`, so
+     * none of their pipeline reaches the age, lead-source or top-10 figures.
+     * The filters apply here too: picking a salesperson excludes them, as it
+     * would anyone else.
+     */
+    var revenueRecs = applyFilters(revenueOnlyRecords(rows, mapping, options), options.filters);
+    var revenueViewRecs = recs.concat(revenueRecs);
+
     // --- Average age of open opportunities (created -> today) ---
     var ageSum = 0, ageCount = 0;
     recs.forEach(function (r) {
@@ -687,7 +696,7 @@
 
     // --- Current-year Closed Won revenue by owner ---
     var wonMap = {}, wonTotal = 0, wonCount = 0;
-    recs.forEach(function (r) {
+    revenueViewRecs.forEach(function (r) {
       if (r.year !== currentYear) return;
       if (String(r.stage).toLowerCase().indexOf('won') === -1) return;
       if (!wonMap[r.owner]) wonMap[r.owner] = { key: r.owner, total: 0, count: 0 };
@@ -698,14 +707,15 @@
       .sort(function (a, b) { return b.total - a.total; });
 
     // --- Awarded opportunities (current year, open) — bid won, not yet booked.
-    //     Owners listed in AWARDED_EXCLUDE_OWNERS (e.g. Finlay) are excluded.
-    //     Listed line by line with a running total. ---
+    //     Owners listed in AWARDED_EXCLUDE_OWNERS are excluded (empty by
+    //     default). Revenue-only owners ARE included here — awarded work is
+    //     revenue won. Listed line by line with a running total. ---
     var excludeOwners = options.awardedExcludeOwners || AWARDED_EXCLUDE_OWNERS;
     function ownerExcluded(owner) {
       var o = String(owner).toLowerCase();
       return excludeOwners.some(function (x) { return o.indexOf(x) !== -1; });
     }
-    var awarded = recs.filter(function (r) {
+    var awarded = revenueViewRecs.filter(function (r) {
       return r.year === currentYear &&
         String(r.stage).toLowerCase().indexOf('award') !== -1 &&
         !ownerExcluded(r.owner);
@@ -928,8 +938,8 @@
     isExcludedAwarded: isExcludedAwarded,
     isSuppressedOwner: isSuppressedOwner,
     isGridScaleOwner: isGridScaleOwner,
-    isStageLimitedOut: isStageLimitedOut,
-    STAGE_LIMITED_OWNERS: STAGE_LIMITED_OWNERS,
+    revenueOnlyRecords: revenueOnlyRecords,
+    REVENUE_ONLY_OWNERS: REVENUE_ONLY_OWNERS,
     gridScaleMetrics: gridScaleMetrics,
     mwFromName: mwFromName,
     SUPPRESSED_OWNERS: SUPPRESSED_OWNERS,

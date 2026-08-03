@@ -957,8 +957,7 @@
     var skippedClosed = r.skippedClosed || 0;
     var skippedRows = r.skippedRows || [];
     var suppressed = r.suppressed || 0;
-    var stageLimited = r.stageLimited || 0;
-    var excluded = suppressed + stageLimited;
+    var excluded = suppressed;
 
     // ---- Summary chips ----
     var summary =
@@ -972,16 +971,18 @@
       '</div>' +
       // Never let people vanish from a report without saying so.
       (suppressed ? '<p class="muted">' + suppressed + ' row' + (suppressed === 1 ? '' : 's') +
-        ' excluded from every figure on this page: opportunities owned by ' +
+        ' excluded from the pipeline figures on this page: opportunities owned by ' +
         escapeHtml(PA.analytics.SUPPRESSED_OWNERS.map(titleCaseName).join(', ')) +
         '. Edit <code>SUPPRESSED_OWNERS</code> in <code>js/analytics.js</code> to change this.</p>' : '') +
-      (stageLimited ? '<p class="muted">' + stageLimited + ' further row' +
-        (stageLimited === 1 ? '' : 's') + ' excluded because ' +
-        escapeHtml(PA.analytics.STAGE_LIMITED_OWNERS.map(function (rule) {
-          return titleCaseName(rule.owner) + ' counts only at ' +
-            (rule.label || rule.keepStages.map(titleCaseName).join(' / '));
-        }).join('; ')) +
-        '. Edit <code>STAGE_LIMITED_OWNERS</code> in <code>js/analytics.js</code> to change this.</p>' : '');
+      // Revenue-only owners are inside that excluded count, but their won and
+      // awarded revenue is added back in two places — say so, or the Won
+      // revenue figure looks like it contradicts the exclusion above.
+      (suppressed && PA.analytics.REVENUE_ONLY_OWNERS.length ? '<p class="muted">' +
+        escapeHtml(PA.analytics.REVENUE_ONLY_OWNERS.map(titleCaseName).join(', ')) +
+        ' counts toward <strong>Won revenue</strong> and <strong>Awarded opportunities</strong> ' +
+        'only — the rest of that pipeline stays out of the total pipeline, the forecast and the ' +
+        'report comparison. Edit <code>REVENUE_ONLY_OWNERS</code> in <code>js/analytics.js</code> ' +
+        'to change this.</p>' : '');
 
     // ---- By-year distribution ----
     // Distant future years are collapsed into a single "N onwards" bucket so

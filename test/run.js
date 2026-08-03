@@ -102,69 +102,66 @@ const synthRow = (owner, stage, amount, close) => ({
   'Next Step': '', 'Product Family': 'X', 'Region': 'EMEA'
 });
 /*
- * Finlay is stage-limited: his Awarded and Closed Won work counts, everything
- * earlier in his pipeline is dropped. Open pipeline here is Finlay's £50k
- * Awarded plus Jane's £30k Awarded; his £40k Proposal is excluded.
+ * Finlay is suppressed from the pipeline but revenue-only: his Closed Won and
+ * Awarded revenue counts in the won / awarded views, and nowhere else. Open
+ * pipeline here is Jane's £30k Awarded alone — his £50k Awarded does NOT
+ * inflate the total.
  */
-const resFin = PA.analytics.analyze([
+const finRows = [
   synthRow('Finlay Anderson', 'Awarded', '£50,000', '10/06/2026'),
   synthRow('Finlay Anderson', 'Proposal/Price Quote', '£40,000', '12/06/2026'),
   synthRow('Finlay Anderson', 'Closed Won', '£70,000', '11/06/2026'),
   synthRow('Finlay Anderson', 'Discovery', '£25,000', '13/06/2026'),
   synthRow('Jane Smith', 'Awarded', '£30,000', '14/06/2026')
-], mapping, { currentYear: 2026 });
-approx('stage-limited owner: awarded counts', resFin.years[2026].total, 80000);
-eq('stage-limited owner: only awarded is open pipeline', resFin.years[2026].count, 2);
-eq('stage-limited owner: earlier stages dropped', resFin.stageLimited, 2);
-eq('stage-limited owner is not suppressed outright', resFin.suppressed, 0);
+];
+const resFin = PA.analytics.analyze(finRows, mapping, { currentYear: 2026 });
+approx('revenue-only owner adds nothing to total pipeline', resFin.years[2026].total, 30000);
+eq('revenue-only owner adds nothing to the count', resFin.years[2026].count, 1);
+eq('all his rows are counted as excluded', resFin.suppressed, 4);
+eq('revenue-only owner is suppressed', PA.analytics.isSuppressedOwner('Finlay Anderson'), true);
 
-// His won revenue must come through when closed deals are included.
-const resFinClosed = PA.analytics.analyze([
-  synthRow('Finlay Anderson', 'Awarded', '£50,000', '10/06/2026'),
-  synthRow('Finlay Anderson', 'Proposal/Price Quote', '£40,000', '12/06/2026'),
-  synthRow('Finlay Anderson', 'Closed Won', '£70,000', '11/06/2026'),
-  synthRow('Jane Smith', 'Awarded', '£30,000', '14/06/2026')
-], mapping, { currentYear: 2026, includeClosed: true });
-approx('stage-limited owner: won revenue counts', resFinClosed.years[2026].total, 150000);
+// Even with closed deals included, his pipeline stays out of the total.
+approx('revenue-only owner stays out with closed included',
+   PA.analytics.analyze(finRows, mapping, { currentYear: 2026, includeClosed: true })
+     .years[2026].total, 30000);
 
-// And his won revenue reaches the Won-by-owner insight.
-const finInsights = PA.analytics.insightMetrics([
-  synthRow('Finlay Anderson', 'Closed Won', '£70,000', '11/06/2026'),
-  synthRow('Finlay Anderson', 'Proposal/Price Quote', '£40,000', '12/06/2026'),
-  synthRow('Jane Smith', 'Closed Won', '£30,000', '14/06/2026')
-], mapping, new Date(Date.UTC(2026, 6, 1)), {});
-approx('stage-limited owner: won revenue in insights', finInsights.wonTotal, 100000);
-eq('stage-limited owner appears in won-by-owner',
-   finInsights.wonByOwner.some(o => o.key === 'Finlay Anderson'), true);
+// But his won revenue DOES reach Won-revenue-by-owner...
+const finToday = new Date(Date.UTC(2026, 6, 1));
+const finIns = PA.analytics.insightMetrics(finRows, mapping, finToday, {});
+approx('revenue-only owner: won revenue counted', finIns.wonTotal, 70000);
+eq('revenue-only owner named in won-by-owner',
+   finIns.wonByOwner.some(o => o.key === 'Finlay Anderson'), true);
 
-// His awarded work reaches the Awarded list.
-const finAwarded = PA.analytics.insightMetrics([
-  synthRow('Finlay Anderson', 'Awarded', '£50,000', '10/06/2026'),
-  synthRow('Jane Smith', 'Awarded', '£30,000', '14/06/2026')
-], mapping, new Date(Date.UTC(2026, 6, 1)), {});
-approx('stage-limited owner: awarded in the awarded list', finAwarded.awardedTotal, 80000);
-eq('stage-limited owner named in the awarded list',
-   finAwarded.awarded.some(a => a.owner === 'Finlay Anderson'), true);
+// ...and his awarded work reaches the Awarded list, alongside Jane's.
+approx('revenue-only owner: awarded revenue counted', finIns.awardedTotal, 80000);
+eq('revenue-only owner named in the awarded list',
+   finIns.awarded.some(a => a.owner === 'Finlay Anderson'), true);
 
-// The rule is configurable and defaults to nobody else being touched.
-eq('stage rule: proposal is dropped for Finlay',
-   PA.analytics.isStageLimitedOut('Finlay Anderson', 'Proposal/Price Quote'), true);
-eq('stage rule: awarded is kept', PA.analytics.isStageLimitedOut('Finlay Anderson', 'Awarded'), false);
-eq('stage rule: closed won is kept', PA.analytics.isStageLimitedOut('Finlay Anderson', 'Closed Won'), false);
-eq('stage rule: closed lost is dropped',
-   PA.analytics.isStageLimitedOut('Finlay Anderson', 'Closed Lost'), true);
-eq('stage rule: nobody else is affected',
-   PA.analytics.isStageLimitedOut('Jane Smith', 'Proposal/Price Quote'), false);
+// His non-revenue stages must not leak into any other insight.
+eq('revenue-only owner absent from the top-10',
+   finIns.topProposed.some(t => t.name.indexOf('Finlay') !== -1), false);
+eq('revenue-only owner absent from allOpps',
+   finIns.allOpps.some(t => t.name.indexOf('Finlay') !== -1), false);
 
-// The awarded-only rule still exists for anyone NOT suppressed: it drops that
-// one stage and keeps the rest.
-const resAwardOnly = PA.analytics.analyze([
-  synthRow('Dana Wright', 'Awarded', '£50,000', '10/06/2026'),
-  synthRow('Dana Wright', 'Proposal/Price Quote', '£40,000', '12/06/2026'),
-  synthRow('Jane Smith', 'Awarded', '£30,000', '14/06/2026')
-], mapping, { currentYear: 2026, awardedExcludeOwners: ['dana'] });
-approx('awarded-only exclusion drops just that stage', resAwardOnly.years[2026].total, 70000);
-eq('awarded-only exclusion keeps other stages', resAwardOnly.years[2026].count, 2);
+// Forecast and health must not see him at all.
+approx('revenue-only owner absent from forecast',
+   PA.analytics.forecastMetrics(finRows, mapping, finToday, {}).next365.total,
+   PA.analytics.forecastMetrics(finRows.filter(r => r['Opportunity Owner'] !== 'Finlay Anderson'),
+     mapping, finToday, {}).next365.total);
+eq('revenue-only owner absent from the filter list',
+   PA.analytics.distinctFilterValues(finRows, mapping, { currentYear: 2026 })
+     .owner.indexOf('Finlay Anderson'), -1);
+
+// The revenue-only record set is exactly his won + awarded rows.
+const finRev = PA.analytics.revenueOnlyRecords(finRows, mapping, {});
+eq('revenue-only set holds just won and awarded', finRev.length, 2);
+eq('revenue-only set is only that owner',
+   finRev.every(r => r.owner === 'Finlay Anderson'), true);
+
+// Filtering to someone else excludes his revenue, as it would anyone's.
+approx('revenue-only owner excluded by a salesperson filter',
+   PA.analytics.insightMetrics(finRows, mapping, finToday,
+     { filters: { owner: ['Jane Smith'] } }).wonTotal, 0);
 
 // 2025 rows (Legacy 90k won, Old 30k) must be out of range, not counted
 eq('out-of-range count > 0', res.outOfRange >= 2, true);
@@ -604,10 +601,8 @@ const foot = doc.footer(2, 3);
 eq('pdf footer shows page numbers', JSON.stringify(foot).indexOf('2 / 3') !== -1, true);
 
 // ---- Suppressed owners: ignored everywhere, in every metric ----
-const SUP = ['Maciej Stefanski', 'Joshua Mauger', 'Katherine Piper'];
-eq('three owners are suppressed by default', PA.analytics.SUPPRESSED_OWNERS.length, 3);
-// Finlay is stage-limited, not suppressed — he still counts at Awarded / Closed Won.
-eq('Finlay is not suppressed', PA.analytics.isSuppressedOwner('Finlay Anderson'), false);
+const SUP = ['Maciej Stefanski', 'Joshua Mauger', 'Katherine Piper', 'Finlay Anderson'];
+eq('four owners are suppressed by default', PA.analytics.SUPPRESSED_OWNERS.length, 4);
 SUP.forEach(n => eq('suppressed: ' + n, PA.analytics.isSuppressedOwner(n), true));
 // Name-order and punctuation variants must still match.
 eq('suppressed: "Piper, Katherine"', PA.analytics.isSuppressedOwner('Piper, Katherine'), true);
@@ -696,18 +691,26 @@ eq('stale baseline tiles ignore suppressed deals', staleDiff.count.delta, 0);
 approx('stale baseline "was" value excludes suppressed deals',
    staleDiff.total.prev, res.years[2026].total + res.years[2027].total);
 
-// Finlay is stage-limited: Awarded and Closed Won count, the rest is dropped.
+// Not even his Awarded work reaches the pipeline total — that is the point of
+// revenue-only: it shows up as revenue, never as forecastable pipeline.
 const finRow = (name, stage, amount) => Object.assign(
   synthRow('Finlay Anderson', stage, amount, '12/06/2026'), { 'Opportunity Name': name });
-const withFin = PA.analytics.analyze(table.rows.concat([
+const finExtra = [
   finRow('Fin Awarded', 'Awarded', '£500,000'),
   finRow('Fin Proposal', 'Proposal/Price Quote', '£400,000'),
   finRow('Fin Discovery', 'Discovery', '£300,000')
-]), mapping, { currentYear: 2026, includeClosed: false });
-approx('stage-limited owner adds only his awarded work',
-   withFin.years[2026].total, res.years[2026].total + 500000);
-eq('his other stages are counted as excluded', withFin.stageLimited, 2);
-eq('he is not counted as suppressed', withFin.suppressed, 0);
+];
+const withFin = PA.analytics.analyze(table.rows.concat(finExtra), mapping,
+  { currentYear: 2026, includeClosed: false });
+approx('revenue-only owner adds nothing to the pipeline total',
+   withFin.years[2026].total, res.years[2026].total);
+eq('every one of his rows is counted as excluded', withFin.suppressed, 3);
+// ...but that same awarded work still shows as awarded revenue.
+approx('his awarded work still counts as awarded revenue',
+   PA.analytics.insightMetrics(table.rows.concat(finExtra), mapping,
+     new Date(Date.UTC(2026, 5, 15)), {}).awardedTotal,
+   PA.analytics.insightMetrics(table.rows, mapping,
+     new Date(Date.UTC(2026, 5, 15)), {}).awardedTotal + 500000);
 
 /*
  * The awarded-exclusion boundary, exercised with an owner who is NOT

@@ -182,9 +182,9 @@ anywhere: KPIs, Pipeline Health, Sales Performance, Forecast Outlook, Pipeline
 Insights, the Report Comparison, the exports, and the filter dropdowns (they are
 not offered as a salesperson to filter by).
 
-By default that list is **Maciej Stefanski, Joshua Mauger and Katherine Piper**.
-Edit `SUPPRESSED_OWNERS` at the top of `js/analytics.js` to change it.
-(Finlay is *not* on it — see *Stage-limited owners* below.)
+By default that list is **Maciej Stefanski, Joshua Mauger, Katherine Piper and
+Finlay**. Edit `SUPPRESSED_OWNERS` at the top of `js/analytics.js` to change it.
+(Finlay has an exception — see *Revenue-only owners* below.)
 
 Matching is on name tokens, so `Katherine Piper`, `Piper, Katherine` and
 `Katherine J Piper` all match, while `Katherine Piperson` does not.
@@ -193,76 +193,31 @@ So the exclusion is never silent, the **Data Quality** card counts the dropped
 rows in an *excluded owners* chip and names who was excluded — the row totals
 still add up (`rows in file` = parsed + skipped + excluded).
 
-### Stage-limited owners
+### Revenue-only owners
 
-`STAGE_LIMITED_OWNERS` is the middle ground: an owner counts **only at certain
-stages**, and everything they own at any other stage is dropped exactly as if
-they were suppressed.
+`REVENUE_ONLY_OWNERS` covers someone who should be **out of the pipeline but in
+the revenue**. They are ordinary members of `SUPPRESSED_OWNERS`, so every
+calculation excludes them by default — total pipeline, weighted forecast,
+health, forecast outlook, the top-10 list, the report comparison and the filter
+dropdowns. Their **Closed Won and Awarded** rows are then added back into two
+views only: **Won revenue by owner** and **Awarded opportunities**.
 
-**Finlay** is stage-limited to **Closed Won and Awarded** — his won revenue and
-awarded work count in full, while his earlier-stage pipeline (Discovery,
-Proposal, Qualification) is excluded from the forecast. He appears normally in
-the salesperson filter, the Awarded list and Won-revenue-by-owner.
+**Finlay** is set up this way: his won and awarded revenue is counted, while
+none of his pipeline reaches the total, the forecast, or what was added and
+removed since the previous report.
 
-Those dropped rows are counted separately in the **Data Quality** card, which
-names the rule, so this exclusion is as visible as full suppression.
+The Data Quality card counts his rows in the excluded total and states the
+exception, so the Won revenue figure never looks like it contradicts the
+exclusion.
 
-> **Note on win rate.** Closed *Lost* is not a kept stage, so a stage-limited
-> owner contributes wins without the matching losses, which nudges the win rate
-> up. Add `'closed lost'` to their `keepStages` if you would rather the rate
-> stayed representative.
+Because he is fully suppressed from the rest, he does not affect the **win
+rate** either — that stays representative of the reporting team.
 
 A third rule, `AWARDED_EXCLUDE_OWNERS`, drops just the Awarded stage for the
 owners it lists. It is **empty by default** — the mechanism is kept because it
 is the natural place to drop a single stage, but nobody is excluded that way
 now. Anyone in `SUPPRESSED_OWNERS` never reaches it, since suppression drops
 their rows first.
-
-## Grid Scale projects (ring-fenced)
-
-Deals owned by a **Grid Scale owner** (by default Maciej Stefanski — see
-`GRID_SCALE_OWNERS` in `js/analytics.js`) form a separate project portfolio.
-They appear in their **own card at the foot of the dashboard** and on their
-**own final page of the PDF report** — and nowhere else: never in the KPIs,
-health, performance, forecast, insights, the main report comparison, or the
-filter dropdowns.
-
-The card is **not affected by the dashboard filters**. Those filters describe
-the main pipeline, which excludes these owners entirely, so applying them could
-only ever empty the card. It says so on screen.
-
-The ring fence works by those owners also being in `SUPPRESSED_OWNERS`, so the
-main analysis never sees them; the Grid Scale calculation is the single place
-that opts out of suppression and then keeps *only* those owners.
-
-Both the card and the page show:
-
-- **Projects, total value and total capacity (MW)** as headline figures.
-- **Movement since the previous report** — the change in each of those three,
-  plus what was added and removed, with proportional bars.
-- **Every project** by name, type, MW, value, sales stage and forecast close
-  date, with a totals row.
-- **Added / removed / changed** since the last report, listed by name. A change
-  records what it moved from (value, stage or MW).
-
-The **PDF page** is always **exactly one page**: beyond 22 projects it shows the
-largest 22 and says so, with the totals still covering the whole portfolio. The
-on-screen card has no such limit and lists every project.
-
-Unlike the main analysis it is **not limited to the current/following year**:
-every open project is listed with its own forecast close date, since the
-portfolio is small and long-dated.
-
-### Capacity (MW)
-
-Read from the **Amount (MW)** column, which is auto-detected. A **zero or blank
-is treated as "not recorded"** — it shows as `—` and is left out of the capacity
-total, rather than reported as 0 MW. The page says how many projects lack a
-figure so a partial total is never mistaken for a complete one.
-
-If a report carries no capacity column at all, the figure falls back to reading
-it out of the project name (`EPC PV Plant 47 MWp`), and the page states that it
-was inferred. A mapped column is never second-guessed from the name.
 
 ## Column mapping (optional fields)
 
