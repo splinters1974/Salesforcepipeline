@@ -58,6 +58,9 @@ alongside the date of this one**, how many days apart they are, and then:
 - **Closed lost since the previous report** — the same, for Closed Lost.
 - **New opportunities since the previous report** — deals that weren't in the
   last export.
+- **Renamed since the previous report** — deals matched to the previous report
+  under a different name, shown with their old name. Still pipeline, not new
+  business.
 - **No longer in the report** — deals that have vanished from the export
   entirely. These are listed separately rather than assumed won, since a deal
   can also disappear because it was deleted or filtered out at source.
@@ -80,10 +83,37 @@ The very first report has nothing to compare against. To get a comparison
 straight away, use **Load a previous report (CSV)** to feed in last month's
 export — it is snapshotted as a baseline without disturbing the dashboard.
 
-Deals are matched across reports by **Opportunity ID** when your report includes
-one (map it in the column mapping panel — it is used *only* for this), otherwise
-by opportunity name. Matching deliberately ignores the owner, so reassigning a
-deal doesn't read as one deal disappearing and another appearing.
+Deals are matched across reports in three passes, strongest first. Each deal is
+consumed by at most one pass, so a weaker rule can never steal a deal a stronger
+one already matched:
+
+1. **Opportunity ID / Job Number** — the immutable Salesforce record ID is
+   ideal: it is allocated automatically and never changes, so a deal matches
+   through a rename, a reassignment and a stage change at once. A job or project
+   number works too. Map it in the column mapping panel; it is used *only* for
+   matching. If a report carries both, the Opportunity ID is preferred.
+2. **Opportunity name** — for deals with no ID yet. Punctuation and case are
+   folded away, so a name that arrives mangled by a character-encoding
+   difference (an en-dash exported as `?`) still matches.
+3. **Owner + value + close date** — a strict last resort that catches a deal
+   renamed while it had no ID. All three must agree, because a report easily
+   holds several deals sharing any two of them.
+
+Matching deliberately ignores the owner in passes 1–2, so reassigning a deal
+doesn't read as one deal disappearing and another appearing.
+
+**Why the layering matters:** a job number is typically only assigned once a
+deal reaches a certain stage. Keyed on "ID, *or else* name", every deal crossing
+that stage would look like one deal vanishing and a different one appearing —
+inflating both the *gone* and *new* lists. Holding both keys per deal is what
+prevents that.
+
+Deals matched under a changed name are listed under **Renamed since the previous
+report** (with their previous name), so a rename reads as a rename rather than
+churn. The card also states how many deals matched by each pass, and warns when
+a large share of the previous report couldn't be matched at all — which nearly
+always means the two exports don't cover the same ground (different report
+filters, owners or columns) rather than a mass of genuinely lost deals.
 
 Snapshots are the whole report, **unfiltered**, so a comparison is never skewed
 by whichever dashboard filters happened to be active. The history keeps the last

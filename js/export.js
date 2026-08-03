@@ -163,6 +163,11 @@
       rows.push(['Previous report', cmp.prevDate, cmp.prevLabel || '']);
       rows.push(['This report', cmp.currDate, cmp.currLabel || '']);
       rows.push(['Days between reports', cmp.daysBetween == null ? 'n/a' : cmp.daysBetween]);
+      var by = cmp.matchedBy || {};
+      rows.push(['Deals matched by job number', by.id || 0]);
+      rows.push(['Deals matched by name', by.name || 0]);
+      rows.push(['Deals matched by owner + value + close date', by.fingerprint || 0]);
+      rows.push(['Previous report unmatched %', Math.round((cmp.unmatchedPrevShare || 0) * 100)]);
       rows.push([]);
 
       rows.push(['Movement', 'Previous', 'This report', 'Change']);
@@ -188,6 +193,17 @@
         }
         rows.push([]);
       });
+
+      // Renames are listed last: same deals as before, not new business.
+      rows.push(['Renamed since previous report', 'Previously called', 'Owner', 'Value', 'Matched by']);
+      if (!(cmp.renamed || []).length) {
+        rows.push(['(none)']);
+      } else {
+        cmp.renamed.forEach(function (o) {
+          rows.push([o.name, o.from, o.owner, num(o.amount), o.via]);
+        });
+      }
+      rows.push([]);
     }
 
     return rows.map(function (row) {

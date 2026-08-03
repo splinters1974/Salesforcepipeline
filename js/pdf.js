@@ -260,8 +260,41 @@
       { text: 'New opportunities since the previous report', style: 'h3' },
       comparisonMovementTable(cmp.added, cmp.addedTotal),
       { text: 'No longer in the report', style: 'h3' },
-      comparisonMovementTable(cmp.removed, cmp.removedTotal)
-    ];
+      comparisonMovementTable(cmp.removed, cmp.removedTotal),
+      renamedBlock(cmp.renamed || []),
+      matchNote(cmp)
+    ].filter(Boolean);
+  }
+
+  // Same deals as last time under a new name — called out so they are not read
+  // as churn.
+  function renamedBlock(list) {
+    if (!list.length) return null;
+    var body = [[th('Opportunity (now)'), th('Previously called'), th('Owner'), th('Value', 'right')]];
+    list.forEach(function (o) {
+      body.push([o.name, o.from, o.owner, { text: money(o.amount), alignment: 'right' }]);
+    });
+    return {
+      stack: [
+        { text: 'Renamed since the previous report', style: 'h3' },
+        { style: 'tbl', table: { headerRows: 1, widths: ['*', '*', 'auto', 'auto'], body: body }, layout: TBL_LAYOUT }
+      ]
+    };
+  }
+
+  // How the two reports were matched, so a reader can judge the comparison.
+  function matchNote(cmp) {
+    var by = cmp.matchedBy || {};
+    var bits = [];
+    if (by.id) bits.push(by.id + ' by job number');
+    if (by.name) bits.push(by.name + ' by name');
+    if (by.fingerprint) bits.push(by.fingerprint + ' by owner + value + close date');
+    if (!bits.length) return null;
+    var pct = Math.round((cmp.unmatchedPrevShare || 0) * 100);
+    return { text: 'Deals matched across the two reports: ' + bits.join(', ') + '.' +
+      (pct >= 20 ? ' ' + pct + '% of the previous report could not be matched — check both ' +
+        'exports cover the same filters, owners and columns.' : ''),
+      style: 'muted', margin: [0, 6, 0, 0] };
   }
 
   function buildDocDefinition(p) {

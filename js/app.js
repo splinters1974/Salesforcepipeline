@@ -1072,7 +1072,55 @@
         '<strong>Load a previous report (CSV)</strong> above.</div>';
       return;
     }
-    el.compareBody.innerHTML = compareDatesHtml(diff) + compareTilesHtml(diff) + compareListsHtml(diff);
+    el.compareBody.innerHTML = compareDatesHtml(diff) + compareTilesHtml(diff) +
+      compareNoteHtml(diff) + compareListsHtml(diff);
+  }
+
+  /*
+   * How the two reports were matched up, plus a warning when a large share of
+   * the previous report couldn't be matched at all — which nearly always means
+   * the two exports don't cover the same ground, rather than a mass of deals
+   * genuinely vanishing.
+   */
+  function compareNoteHtml(d) {
+    var by = d.matchedBy || { id: 0, name: 0, fingerprint: 0 };
+    var bits = [];
+    if (by.id) bits.push(by.id + ' by job number');
+    if (by.name) bits.push(by.name + ' by name');
+    if (by.fingerprint) bits.push(by.fingerprint + ' by owner + value + close date');
+    var note = bits.length
+      ? '<p class="compare-matchnote">Deals matched across the two reports: ' +
+        escapeHtml(bits.join(', ')) + '.</p>'
+      : '';
+
+    var pct = Math.round((d.unmatchedPrevShare || 0) * 100);
+    if (d.removed.length >= 3 && pct >= 20) {
+      note += '<div class="compare-warning"><strong>' + pct + '% of the previous report ' +
+        '(' + d.removed.length + ' open ' + (d.removed.length === 1 ? 'deal' : 'deals') +
+        ') could not be matched to anything in this one.</strong> That is usually a sign the ' +
+        'two exports do not cover the same ground — check both were run with the same report ' +
+        'filters, owners and columns, and that the same Opportunity ID / job number column is ' +
+        'mapped in each — rather than that this many deals genuinely disappeared.</div>';
+    }
+    return note;
+  }
+
+  function compareRenamedHtml(list) {
+    var head = '<div class="compare-list"><h3>Renamed since the previous report' +
+      '<span class="compare-pill compare-pill-renamed">' + list.length + ' renamed</span></h3>';
+    if (!list.length) return '';
+    var rows = list.map(function (o) {
+      return '<tr><td>' + escapeHtml(o.name) + '</td>' +
+        '<td>' + escapeHtml(o.from) + '</td>' +
+        '<td>' + escapeHtml(o.owner) + '</td>' +
+        '<td class="num">' + currency(o.amount) + '</td></tr>';
+    }).join('');
+    return head +
+      '<p class="compare-empty">These are the same deals as last time, still counted as ' +
+      'pipeline — not new business.</p>' +
+      '<table class="data-table compare-renamed">' +
+      '<thead><tr><th>Opportunity (now)</th><th>Previously called</th><th>Owner</th><th>Value</th></tr></thead>' +
+      '<tbody>' + rows + '</tbody></table></div>';
   }
 
   function populateBaselineOptions(curr) {
@@ -1168,6 +1216,7 @@
         'New opportunities since the previous report', 'new',
         d.added.length + ' new', d.added, d.addedTotal,
         'No new opportunities appeared between these two reports.', null) +
+      compareRenamedHtml(d.renamed || []) +
       compareMovementHtml(
         'No longer in the report', 'gone',
         d.removed.length + ' gone', d.removed, d.removedTotal,

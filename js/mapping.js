@@ -44,9 +44,13 @@
       hints: ['opportunity name', 'opportunity', 'name', 'deal name'] },
     // Used only to match the same deal across two reports. Deliberately
     // narrow hints — a bare "id" would happily claim columns like "Bid Value".
-    { key: 'oppId', label: 'Opportunity ID', required: false,
+    // A job/project number counts: it identifies the deal just as well, even
+    // though it is typically only assigned once a deal reaches a later stage.
+    { key: 'oppId', label: 'Opportunity ID / Job Number', required: false,
       hints: ['opportunity id', 'opp id', 'record id', 'salesforce id',
-              'opportunity record id', 'opportunity 18 digit id'] }
+              'opportunity record id', 'opportunity 18 digit id',
+              'job number', 'job no', 'job ref', 'job code', 'job id',
+              'project number', 'project no', 'project code'] }
   ];
 
   function norm(s) {
@@ -54,15 +58,19 @@
   }
 
   // Score how well a header matches a field's hints. Higher is better.
+  // Earlier hints win ties by a hair, so a field can express a preference
+  // between two columns that both match exactly — e.g. an immutable
+  // Opportunity ID is chosen over a Job Number when a report carries both.
   function scoreHeader(header, hints) {
     var h = norm(header);
     if (!h) return 0;
     var best = 0;
-    hints.forEach(function (hint) {
+    hints.forEach(function (hint, i) {
       var hh = norm(hint);
-      if (h === hh) best = Math.max(best, 100);
-      else if (h.indexOf(hh) !== -1) best = Math.max(best, 70 + hh.length); // longer hint = stronger
-      else if (hh.indexOf(h) !== -1) best = Math.max(best, 40);
+      var rank = (hints.length - i) / (hints.length * 100); // < 0.01, tie-break only
+      if (h === hh) best = Math.max(best, 100 + rank);
+      else if (h.indexOf(hh) !== -1) best = Math.max(best, 70 + hh.length + rank); // longer hint = stronger
+      else if (hh.indexOf(h) !== -1) best = Math.max(best, 40 + rank);
     });
     return best;
   }

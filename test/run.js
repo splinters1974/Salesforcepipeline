@@ -531,7 +531,8 @@ eq('snapshot open count = both years', prevSnap.count,
 approx('snapshot total = both years', prevSnap.total,
    res.years[2026].total + res.years[2027].total);
 eq('snapshot carries report date', prevSnap.reportDate, '2026-06-12');
-eq('snapshot keys fall back to name', prevSnap.opps[0].key.slice(0, 3), 'nm:');
+eq('snapshot stores the raw name for matching', prevSnap.opps[0].name, 'Acme Renewal');
+eq('snapshot stores an empty job number when unmapped', prevSnap.opps[0].oppId, '');
 
 // A later report where Acme Renewal (£120k, Jane Smith, Proposal) has been won.
 const wonRows = clone(table.rows);
@@ -608,6 +609,73 @@ eq('identical reports: no removals', sameDiff.removed.length, 0);
 eq('identical reports: zero count delta', sameDiff.count.delta, 0);
 approx('identical reports: zero value delta', sameDiff.total.delta, 0);
 
+// A job number that only appears once a deal reaches a later stage must not
+// read as the old deal vanishing and a new one arriving. This is the exact
+// shape of the "15 gone" report: deals progressing past the stage where a job
+// number is assigned.
+const jobMapping = Object.assign({}, mapping, { oppId: 'Job Number' });
+const noJobNumbers = clone(table.rows).map(r => Object.assign(r, { 'Job Number': '' }));
+const gainedJobNumbers = clone(table.rows).map((r, i) =>
+  Object.assign(r, { 'Job Number': i < 5 ? 'JOB' + (1000 + i) : '' }));
+const jobPrev = PA.compare.buildSnapshot(noJobNumbers, jobMapping, snapOpts('2026-06-12'));
+const jobDiff = PA.compare.diffSnapshots(
+  jobPrev, PA.compare.buildSnapshot(gainedJobNumbers, jobMapping, snapOpts('2026-08-02')));
+eq('job number appearing does not orphan deals', jobDiff.removed.length, 0);
+eq('job number appearing does not duplicate deals', jobDiff.added.length, 0);
+eq('deals without a job number still match by name', jobDiff.matchedBy.name, 30);
+
+// A deal that both gains a job number AND is renamed at the same time is still
+// caught, by the owner+value+close-date fingerprint.
+const renamedAndNumbered = clone(gainedJobNumbers);
+renamedAndNumbered[0]['Opportunity Name'] = 'Acme Renewal - Phase 1 (rev B)';
+const bothDiff = PA.compare.diffSnapshots(
+  jobPrev, PA.compare.buildSnapshot(renamedAndNumbered, jobMapping, snapOpts('2026-08-02')));
+eq('renamed + newly numbered deal still matches', bothDiff.removed.length, 0);
+eq('rename is reported as a rename', bothDiff.renamed.length, 1);
+eq('rename records the old name', bothDiff.renamed[0].from, 'Acme Renewal');
+eq('rename records the new name', bothDiff.renamed[0].name, 'Acme Renewal - Phase 1 (rev B)');
+eq('rename matched via fingerprint', bothDiff.renamed[0].via, 'fingerprint');
+
+// Character-encoding drift between two exports (an en-dash arriving as "?")
+// must not split one deal into a removal plus an addition.
+const dashRows = clone(table.rows);
+dashRows[0]['Opportunity Name'] = 'Haycombe – Bath Crematoria';
+const qmarkRows = clone(table.rows);
+qmarkRows[0]['Opportunity Name'] = 'Haycombe ? Bath Crematoria';
+const encDiff = PA.compare.diffSnapshots(
+  PA.compare.buildSnapshot(dashRows, mapping, snapOpts('2026-06-12')),
+  PA.compare.buildSnapshot(qmarkRows, mapping, snapOpts('2026-08-02')));
+eq('encoding drift does not orphan a deal', encDiff.removed.length, 0);
+eq('encoding drift does not duplicate a deal', encDiff.added.length, 0);
+eq('encoding drift matched on the folded name', encDiff.matchedBy.name, 30);
+
+// The fingerprint pass must stay strict: same owner and value but a different
+// close date are two different deals, not one renamed one.
+const fpA = clone(table.rows).slice(0, 1);
+const fpB = clone(table.rows).slice(0, 1);
+fpB[0]['Opportunity Name'] = 'Totally Different Deal';
+fpB[0]['Close Date'] = '20/09/2026';
+const fpDiff = PA.compare.diffSnapshots(
+  PA.compare.buildSnapshot(fpA, mapping, snapOpts('2026-06-12')),
+  PA.compare.buildSnapshot(fpB, mapping, snapOpts('2026-08-02')));
+eq('fingerprint will not match on a different close date', fpDiff.removed.length, 1);
+eq('fingerprint mismatch surfaces as an addition', fpDiff.added.length, 1);
+
+// A wholly unrelated report should read as such, not as a clean comparison.
+const unrelated = clone(table.rows).map((r, i) =>
+  Object.assign(r, { 'Opportunity Name': 'Unrelated Deal ' + i, 'Amount': '£1,234' }));
+const unrelatedDiff = PA.compare.diffSnapshots(
+  prevSnap, PA.compare.buildSnapshot(unrelated, mapping, snapOpts('2026-08-02')));
+eq('unrelated reports flag a high unmatched share',
+   unrelatedDiff.unmatchedPrevShare > 0.9, true);
+eq('matched reports show a zero unmatched share', sameDiff.unmatchedPrevShare, 0);
+
+// Snapshots written before match keys were stored still compare (no oppId field).
+const legacy = JSON.parse(JSON.stringify(prevSnap));
+legacy.opps.forEach(o => { delete o.oppId; });
+eq('legacy snapshots still match by name',
+   PA.compare.diffSnapshots(legacy, PA.compare.buildSnapshot(table.rows, mapping, snapOpts('2026-08-02'))).removed.length, 0);
+
 // Matching by Opportunity ID survives a rename that name-matching would miss.
 const idMapping = Object.assign({}, mapping, { oppId: 'Opportunity ID' });
 const withIds = clone(table.rows).map((r, i) => Object.assign(r, { 'Opportunity ID': 'OPP' + i }));
@@ -616,8 +684,52 @@ renamed[0]['Opportunity Name'] = 'Acme Renewal (renegotiated)';
 const idPrev = PA.compare.buildSnapshot(withIds, idMapping, snapOpts('2026-06-12'));
 const idDiff = PA.compare.diffSnapshots(
   idPrev, PA.compare.buildSnapshot(renamed, idMapping, snapOpts('2026-08-02')));
-eq('id matching uses the id key', idPrev.opps[0].key, 'id:opp0');
+eq('snapshot stores the job number', idPrev.opps[0].oppId, 'OPP0');
+
+// The Salesforce Opportunity ID is the strongest key: immutable, so a deal
+// matches through a rename, an owner change and a stage change at once.
+const sfPrev = clone(table.rows).map((r, i) =>
+  Object.assign(r, { 'Opportunity ID': '0065g00000ABC' + String(i).padStart(2, '0') }));
+const sfCurr = clone(sfPrev);
+sfCurr[0]['Opportunity Name'] = 'Completely Different Name';
+sfCurr[0]['Opportunity Owner'] = 'Someone Else';
+sfCurr[0]['Amount'] = '£999,000';
+sfCurr[0]['Close Date'] = '01/12/2027';
+const sfDiff = PA.compare.diffSnapshots(
+  PA.compare.buildSnapshot(sfPrev, idMapping, snapOpts('2026-06-12')),
+  PA.compare.buildSnapshot(sfCurr, idMapping, snapOpts('2026-08-02')));
+eq('salesforce id survives a total rewrite', sfDiff.removed.length + sfDiff.added.length, 0);
+eq('salesforce id matches every deal', sfDiff.matchedBy.id, 30);
+
+// The same record exported as a 15-char and an 18-char ID is one deal.
+const id15 = clone(table.rows).map((r, i) =>
+  Object.assign(r, { 'Opportunity ID': '0065g00000ABC' + String(i).padStart(2, '0') }));
+const id18 = clone(table.rows).map((r, i) =>
+  Object.assign(r, { 'Opportunity ID': '0065g00000ABC' + String(i).padStart(2, '0') + 'AA1' }));
+const idFmtDiff = PA.compare.diffSnapshots(
+  PA.compare.buildSnapshot(id15, idMapping, snapOpts('2026-06-12')),
+  PA.compare.buildSnapshot(id18, idMapping, snapOpts('2026-08-02')));
+eq('15-char and 18-char ids match the same record', idFmtDiff.matchedBy.id, 30);
+eq('id format change orphans nothing', idFmtDiff.removed.length + idFmtDiff.added.length, 0);
+
+// Case must be preserved for 15-char ids, which are genuinely case-sensitive.
+const caseA = [Object.assign(clone(table.rows)[0], { 'Opportunity ID': '0065g00000ABCDe' })];
+const caseB = [Object.assign(clone(table.rows)[0], { 'Opportunity ID': '0065g00000ABCDE' })];
+caseB[0]['Opportunity Name'] = 'A Different Deal Entirely';
+caseB[0]['Close Date'] = '03/04/2027';
+const caseDiff = PA.compare.diffSnapshots(
+  PA.compare.buildSnapshot(caseA, idMapping, snapOpts('2026-06-12')),
+  PA.compare.buildSnapshot(caseB, idMapping, snapOpts('2026-08-02')));
+eq('15-char ids are not folded together by case', caseDiff.matchedBy.id, 0);
+
+// Job numbers stay case-insensitive, since they are free text.
+const jobLower = [Object.assign(clone(table.rows)[0], { 'Opportunity ID': 'job-2001' })];
+const jobUpper = [Object.assign(clone(table.rows)[0], { 'Opportunity ID': 'JOB-2001' })];
+eq('job numbers match case-insensitively', PA.compare.diffSnapshots(
+  PA.compare.buildSnapshot(jobLower, idMapping, snapOpts('2026-06-12')),
+  PA.compare.buildSnapshot(jobUpper, idMapping, snapOpts('2026-08-02'))).matchedBy.id, 1);
 eq('renamed deal stays matched by id', idDiff.added.length + idDiff.removed.length, 0);
+eq('rename with a stable id matches on the id', idDiff.renamed[0].via, 'id');
 
 // Snapshot history: newest last, same-date reloads replace, capped.
 let hist = [];
@@ -658,6 +770,24 @@ csvHasCmp('closed won block', 'Closed won since previous report');
 csvHasCmp('closed won deal', 'Acme Renewal,Jane Smith,120000');
 csvHasCmp('closed lost block', 'Closed lost since previous report');
 csvHasCmp('empty list marked', '(none)');
+csvHasCmp('match diagnostics', 'Deals matched by name,30');
+csvHasCmp('unmatched share', 'Previous report unmatched %,0');
+csvHasCmp('renamed block', 'Renamed since previous report');
+
+// Renames reach both exports.
+const renCsv = PA.export.buildSummaryCsv(res, health, ins, {
+  generated: '2026-08-02', comparison: bothDiff
+});
+eq('comparison csv lists the rename',
+   renCsv.indexOf('Acme Renewal - Phase 1 (rev B),Acme Renewal') !== -1, true);
+const renDoc = JSON.stringify(PA.pdf.buildDocDefinition({
+  results: res, health: health, insights: ins, proposed: [],
+  comparison: bothDiff, images: {}, meta: {}
+}).content);
+eq('comparison pdf lists the rename',
+   renDoc.indexOf('Renamed since the previous report') !== -1, true);
+eq('comparison pdf carries the match note',
+   renDoc.indexOf('Deals matched across the two reports') !== -1, true);
 eq('summary csv omits comparison when absent',
    PA.export.buildSummaryCsv(res, health, ins, { generated: 'x' }).indexOf('Report comparison'), -1);
 

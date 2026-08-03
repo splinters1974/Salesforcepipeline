@@ -424,6 +424,24 @@ main { padding: 24px 0 48px; }
 .compare-pill-lost { background: #fddfdd; color: var(--red); }
 .compare-pill-new { background: #f0f8ff; color: var(--current); }
 .compare-pill-gone { background: #f3f2f2; color: var(--muted); }
+.compare-pill-renamed { background: #fdf1de; color: var(--amber); }
+
+/* Matching note + "these reports may not be comparable" warning */
+.compare-matchnote { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
+.compare-warning {
+  padding: 12px 16px;
+  margin: 0 0 18px;
+  background: #fdf6ec;
+  border: 1px solid #f6d999;
+  border-left: 4px solid #dd7a01;
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: #8a5106;
+}
+.compare-warning strong { display: block; margin-bottom: 4px; }
+/* Renamed table: only the value column is numeric */
+.data-table.compare-renamed th:nth-child(-n+3),
+.data-table.compare-renamed td:nth-child(-n+3) { text-align: left; }
 .compare-badge {
   display: inline-block; padding: 1px 8px; border-radius: 999px;
   font-size: 11px; font-weight: 600;
