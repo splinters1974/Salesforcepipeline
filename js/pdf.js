@@ -198,6 +198,106 @@
 
   // ---- Report comparison ----
 
+  var BAR_W = 250;                 // drawing width for the bridge bars, in pt
+  var BAR_H = 13;
+
+  /*
+   * Old-vs-new pipeline bridge, drawn as a waterfall with pdfmake's vector
+   * canvas rather than a rasterised chart — so it renders identically at any
+   * zoom and does not depend on a chart being on screen when the PDF is built.
+   *
+   * Previous ---- what left ----> what entered ----> This report
+   */
+  function comparisonBridge(cmp) {
+    var b = cmp && cmp.bridge;
+    if (!b) return null;
+
+    var peak = Math.max(b.prev, b.curr, 1);
+    var scale = BAR_W / peak;
+    // The waterfall's middle steps hang between the two totals.
+    var afterLeft = b.prev - b.left;
+
+    function bar(x, w, color) {
+      // Sub-point slivers vanish when rendered; show a hairline instead so a
+      // small-but-real movement is still visible.
+      var width = Math.max(w, w > 0 ? 0.75 : 0);
+      return { canvas: [{ type: 'rect', x: x, y: 0, w: width, h: BAR_H, color: color }] };
+    }
+    function row(label, x, w, color, value, opts) {
+      opts = opts || {};
+      return [
+        { text: label, style: opts.bold ? 'bridgeLabelBold' : 'bridgeLabel' },
+        bar(x, w, color),
+        { text: value, style: opts.bold ? 'bridgeValueBold' : 'bridgeValue',
+          color: opts.color || '#181818' }
+      ];
+    }
+
+    var body = [
+      row('Previous pipeline', 0, b.prev * scale, '#747474', money(b.prev), { bold: true }),
+      row('Left the pipeline', afterLeft * scale, b.left * scale, '#ba0517',
+          b.left ? '-' + money(b.left) : money(0), { color: '#ba0517' }),
+      row('Entered the pipeline', afterLeft * scale, b.entered * scale, '#04844b',
+          b.entered ? '+' + money(b.entered) : money(0), { color: '#04844b' }),
+      row('This report', 0, b.curr * scale, '#0176d3', money(b.curr), { bold: true })
+    ];
+
+    var netColor = b.net > 0 ? '#04844b' : (b.net < 0 ? '#ba0517' : '#706e6b');
+    var netText = b.net === 0 ? 'No change'
+      : (b.net > 0 ? '+' : '-') + money(Math.abs(b.net));
+
+    return {
+      stack: [
+        { text: 'Pipeline movement', style: 'h3' },
+        {
+          layout: 'noBorders',
+          table: { widths: ['auto', BAR_W, 'auto'], body: body },
+          margin: [0, 2, 0, 4]
+        },
+        {
+          columns: [
+            { text: 'Net position', style: 'bridgeLabelBold', width: 'auto' },
+            { text: netText, style: 'bridgeNet', color: netColor, margin: [10, 0, 0, 0] }
+          ],
+          margin: [0, 2, 0, 8]
+        }
+      ]
+    };
+  }
+
+  // What made up the two sides of the bridge, so the visual can be checked.
+  function comparisonBridgeDetail(cmp) {
+    var b = cmp && cmp.bridge;
+    if (!b) return null;
+    function line(label, v, sign) {
+      return [{ text: label, style: 'muted' },
+              { text: (v ? sign : '') + money(v), alignment: 'right', style: 'muted' }];
+    }
+    var left = [[th('Left the pipeline'), th('Value', 'right')],
+      line('Closed won', b.won, '-'),
+      line('Closed lost', b.lostDeals, '-'),
+      line('No longer in the report', b.gone, '-'),
+      line('Moved out of scope', b.movedOut, '-'),
+      line('Value reduced on existing deals', b.revaluedDown, '-'),
+      [{ text: 'Total', bold: true },
+       { text: '-' + money(b.left), alignment: 'right', bold: true, color: '#ba0517' }]];
+    var right = [[th('Entered the pipeline'), th('Value', 'right')],
+      line('New opportunities', b.addedNew, '+'),
+      line('Moved into scope', b.movedIn, '+'),
+      line('Value increased on existing deals', b.revaluedUp, '+'),
+      [{ text: '', border: [false, false, false, false] }, {}],
+      [{ text: '', border: [false, false, false, false] }, {}],
+      [{ text: 'Total', bold: true },
+       { text: '+' + money(b.entered), alignment: 'right', bold: true, color: '#04844b' }]];
+    return {
+      columns: [
+        { width: '*', table: { headerRows: 1, widths: ['*', 'auto'], body: left }, layout: TBL_LAYOUT, style: 'tbl' },
+        { width: '*', table: { headerRows: 1, widths: ['*', 'auto'], body: right }, layout: TBL_LAYOUT, style: 'tbl' }
+      ],
+      columnGap: 18
+    };
+  }
+
   function signed(v, asMoney) {
     if (v === 0) return 'no change';
     var body = asMoney ? money(Math.abs(v)) : String(Math.abs(v));
@@ -253,6 +353,8 @@
         ],
         columnGap: 10, margin: [0, 6, 0, 12]
       },
+      comparisonBridge(cmp),
+      comparisonBridgeDetail(cmp),
       { text: 'Closed won since the previous report', style: 'h3' },
       comparisonMovementTable(cmp.closedWon, cmp.closedWonTotal),
       { text: 'Closed lost since the previous report', style: 'h3' },
@@ -411,6 +513,11 @@
         muted: { fontSize: 8.5, color: '#706e6b' },
         tbl: { fontSize: 8.5, margin: [0, 2, 0, 8] },
         tableHeader: { bold: true, fontSize: 8, color: '#706e6b' },
+        bridgeLabel: { fontSize: 9, color: '#3e3e3c' },
+        bridgeLabelBold: { fontSize: 9, bold: true, color: '#181818' },
+        bridgeValue: { fontSize: 9, alignment: 'right' },
+        bridgeValueBold: { fontSize: 10, bold: true, alignment: 'right' },
+        bridgeNet: { fontSize: 13, bold: true },
         foot: { fontSize: 8, color: '#a8a8a8' }
       }
     };

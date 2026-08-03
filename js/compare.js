@@ -376,6 +376,63 @@
       }
     });
 
+    /*
+     * Reconciliation from the previous pipeline value to this one. Every deal
+     * that entered or left the counted set contributes exactly once, so
+     *   prev - left + entered + revalued === curr
+     * holds to the penny. A bridge that doesn't add up is worse than no bridge,
+     * so this is derived from the same `counted()` test the tiles use rather
+     * than from the display lists, which omit out-of-scope movements.
+     *
+     * Winning a deal *removes* it from open pipeline, so it sits on the "left"
+     * side. That is pipeline mechanics, not a judgement — the labels say
+     * "left the pipeline" rather than "lost" for exactly that reason.
+     */
+    var bridge = {
+      prev: prevTotals.total, curr: currTotals.total,
+      won: 0, lostDeals: 0, gone: 0, movedOut: 0,
+      addedNew: 0, movedIn: 0, revaluedUp: 0, revaluedDown: 0
+    };
+
+    /*
+     * Whether a deal contributes to the pipeline total — the exact test
+     * totalsFor() applies. This is deliberately stricter than counted(), which
+     * governs list *scope* and treats a just-closed deal as in scope so the
+     * closure gets reported. For the bridge to balance it must mirror the
+     * totals instead: a closed deal contributes nothing.
+     */
+    function contributes(o, snap) {
+      return !!o && !o.closed && !o.excluded &&
+        (o.year === snap.currentYear || o.year === snap.nextYear);
+    }
+
+    m.pairs.forEach(function (pair) {
+      var p = pair.prev, c = pair.curr;
+      var was = contributes(p, prev), is = contributes(c, curr);
+      if (was && is) {
+        // Tracked in both directions rather than netted: an uplift on one deal
+        // and a markdown on another are two real movements, and netting them
+        // understates both sides of "what was gained / what was lost".
+        var move = c.amount - p.amount;
+        if (move > 0) bridge.revaluedUp += move;
+        else bridge.revaluedDown += -move;
+      } else if (was && !is) {
+        if (c.closed && c.won) bridge.won += p.amount;
+        else if (c.closed) bridge.lostDeals += p.amount;
+        else bridge.movedOut += p.amount;   // slipped out of the window, or excluded
+      } else if (!was && is) bridge.movedIn += c.amount;
+    });
+    m.unmatchedPrev.forEach(function (p) { if (contributes(p, prev)) bridge.gone += p.amount; });
+    m.unmatchedCurr.forEach(function (c) { if (contributes(c, curr)) bridge.addedNew += c.amount; });
+
+    // Headline lost / gained / net. Net re-valuation is still exposed, since
+    // the reconciliation is stated in terms of it.
+    bridge.revalued = bridge.revaluedUp - bridge.revaluedDown;
+    bridge.left = bridge.won + bridge.lostDeals + bridge.gone + bridge.movedOut +
+                  bridge.revaluedDown;
+    bridge.entered = bridge.addedNew + bridge.movedIn + bridge.revaluedUp;
+    bridge.net = bridge.entered - bridge.left;
+
     // Only genuinely unmatched rows count as new or gone, and only inside the
     // window the tiles describe.
     var added = m.unmatchedCurr.filter(function (c) {
@@ -417,6 +474,7 @@
       // window, or on a deliberately excluded stage. Reported as a number
       // rather than silently dropped.
       notShown: notShown,
+      bridge: bridge,
       windowYears: [curr.currentYear, curr.nextYear],
       closedWon: closedWon,
       closedLost: closedLost,

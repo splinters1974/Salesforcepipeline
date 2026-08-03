@@ -991,6 +991,66 @@ eq('history capped', capped.length, PA.compare.MAX_SNAPSHOTS);
 
 eq('diff needs both snapshots', PA.compare.diffSnapshots(null, prevSnap), null);
 
+// ---- Old-vs-new bridge: must reconcile to the penny ----
+function checkBridge(label, d) {
+  const b = d.bridge;
+  approx(label + ': prev - left + entered = curr', b.prev - b.left + b.entered, b.curr, 0.01);
+  approx(label + ': net equals the tile movement', b.net, d.total.delta, 0.01);
+  approx(label + ': components sum to net',
+    b.addedNew + b.movedIn + b.revalued - b.won - b.lostDeals - b.gone - b.movedOut,
+    b.net, 0.01);
+}
+checkBridge('win', wonDiff);
+checkBridge('loss', lostDiff);
+checkBridge('addition', addedDiff);
+checkBridge('removal', droppedDiff);
+checkBridge('no movement', sameDiff);
+checkBridge('filtered', janeDiff);
+checkBridge('out-of-window', oowDiff);
+checkBridge('excluded-stage boundary', danaDiff);
+
+// The bridge attributes each movement to the right side.
+approx('bridge: a win leaves the pipeline', wonDiff.bridge.won, 120000);
+approx('bridge: a loss leaves the pipeline', lostDiff.bridge.lostDeals, 120000);
+approx('bridge: a new deal enters', addedDiff.bridge.addedNew, 90000);
+approx('bridge: a dropped deal leaves', droppedDiff.bridge.gone, 120000);
+eq('bridge: nothing moves when reports match', sameDiff.bridge.left + sameDiff.bridge.entered, 0);
+
+// A deal whose value simply changed is a re-valuation, not churn.
+const revalued = clone(table.rows);
+revalued.find(r => r['Opportunity Name'] === 'Acme Renewal')['Amount'] = '£200,000';
+const revalDiff = PA.compare.diffSnapshots(
+  prevSnap, PA.compare.buildSnapshot(revalued, mapping, snapOpts('2026-08-02')), {});
+checkBridge('re-valuation', revalDiff);
+approx('bridge: an uplift is a re-valuation', revalDiff.bridge.revalued, 80000);
+eq('bridge: an uplift is not a new deal', revalDiff.bridge.addedNew, 0);
+eq('bridge: an uplift does not change the deal count', revalDiff.count.delta, 0);
+approx('bridge: an uplift shows as entered value', revalDiff.bridge.entered, 80000);
+eq('bridge: an uplift loses nothing', revalDiff.bridge.left, 0);
+
+// An uplift on one deal and a markdown on another are two distinct movements —
+// netting them would understate both "gained" and "lost".
+const mixed = clone(table.rows);
+mixed.find(r => r['Opportunity Name'] === 'Hooli Migration')['Amount'] = '£230,000'; // +80,000
+mixed.find(r => r['Opportunity Name'] === 'Nexus Renewal')['Amount'] = '£35,000';    // -30,000
+const mixedDiff = PA.compare.diffSnapshots(
+  prevSnap, PA.compare.buildSnapshot(mixed, mapping, snapOpts('2026-08-02')), {});
+checkBridge('mixed re-valuation', mixedDiff);
+approx('bridge: uplift tracked separately', mixedDiff.bridge.revaluedUp, 80000);
+approx('bridge: markdown tracked separately', mixedDiff.bridge.revaluedDown, 30000);
+approx('bridge: both sides reported in full, not netted', mixedDiff.bridge.entered, 80000);
+approx('bridge: markdown reaches the lost side', mixedDiff.bridge.left, 30000);
+approx('bridge: net is still the true movement', mixedDiff.bridge.net, 50000);
+
+// A markdown lands on the other side.
+const marked = clone(table.rows);
+marked.find(r => r['Opportunity Name'] === 'Acme Renewal')['Amount'] = '£20,000';
+const markDiff = PA.compare.diffSnapshots(
+  prevSnap, PA.compare.buildSnapshot(marked, mapping, snapOpts('2026-08-02')), {});
+checkBridge('markdown', markDiff);
+approx('bridge: a markdown leaves value', markDiff.bridge.left, 100000);
+eq('bridge: a markdown gains nothing', markDiff.bridge.entered, 0);
+
 // Comparison reaches both exports.
 const cmpCsv = PA.export.buildSummaryCsv(res, health, ins, {
   generated: '2026-08-02', comparison: wonDiff
@@ -1043,6 +1103,17 @@ docHasCmp('closed won heading', 'Closed won since the previous report');
 docHasCmp('closed lost heading', 'Closed lost since the previous report');
 docHasCmp('closed won deal', 'Acme Renewal');
 docHasCmp('signed movement', '-1 vs 24');
+docHasCmp('bridge heading', 'Pipeline movement');
+docHasCmp('bridge previous row', 'Previous pipeline');
+docHasCmp('bridge left row', 'Left the pipeline');
+docHasCmp('bridge entered row', 'Entered the pipeline');
+docHasCmp('bridge net position', 'Net position');
+docHasCmp('bridge detail: closed won', 'Closed won');
+docHasCmp('bridge detail: revaluation', 'Value increased on existing deals');
+// The waterfall is drawn as vectors, not a rasterised chart.
+eq('bridge is drawn as canvas rects', (cmpJson.match(/"type":"rect"/g) || []).length >= 4, true);
+eq('bridge bars are never negative width',
+   (JSON.parse(cmpJson).toString(), (cmpJson.match(/"w":-[\d.]+/g) || []).length), 0);
 eq('comparison adds a 4th page',
    cmpDoc.content.filter(b => b && b.pageBreak === 'before').length, 3);
 eq('pdf omits comparison page when absent',
