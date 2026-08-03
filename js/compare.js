@@ -164,11 +164,14 @@
     var currentYear = opts.currentYear || new Date().getFullYear();
     var nextYear = currentYear + 1;
 
-    // Mirror analyze(): drop awarded deals owned by an excluded owner so the
-    // snapshot's headline totals match what the dashboard shows.
-    var recs = built.records.filter(function (r) {
-      return !PA.analytics.isExcludedAwarded(r, opts.awardedExcludeOwners);
-    });
+    /*
+     * Awarded deals owned by an excluded owner are kept in the snapshot but
+     * flagged, rather than dropped. They stay out of the headline totals, which
+     * mirrors analyze() — but keeping the row means the comparison can still
+     * see the deal on both sides. Dropping it outright made a deal moving
+     * Proposal -> Awarded (progress!) look like it had vanished from the report.
+     */
+    var recs = built.records;
 
     var opps = recs.map(function (r) {
       return {
@@ -184,6 +187,9 @@
         won: isWonStage(r.stage),
         closeDate: toIso(r.date),
         year: r.year,
+        // Present in the report but deliberately not counted (an Awarded deal
+        // owned by someone in AWARDED_EXCLUDE_OWNERS).
+        excluded: PA.analytics.isExcludedAwarded(r, opts.awardedExcludeOwners),
         // Carried so a stored snapshot can be re-sliced by the dashboard
         // filters later, without needing the original CSV back.
         region: r.region,
@@ -218,7 +224,7 @@
    */
   function totalsFor(opps, currentYear, nextYear) {
     var open = (opps || []).filter(function (o) {
-      return !o.closed && (o.year === currentYear || o.year === nextYear);
+      return !o.closed && !o.excluded && (o.year === currentYear || o.year === nextYear);
     });
     var total = 0, weighted = 0;
     open.forEach(function (o) { total += o.amount; weighted += o.weighted; });
@@ -320,26 +326,33 @@
     var m = matchOpps(prevOpps, currOpps);
     var closedWon = [], closedLost = [], renamed = [];
     var matchedBy = { id: 0, name: 0, fingerprint: 0 };
-    var outOfWindow = 0;
+    var notShown = 0;
 
     /*
-     * The headline tiles only count open pipeline inside the analysis window,
-     * so the movement lists honour the same window — otherwise a deal closing
-     * in a year the dashboard never counted would appear as a win while the
-     * tiles above it reported no change. A deal counts as in scope if it sat
-     * in the window in EITHER report, which keeps deals that slipped out of
-     * the window visible rather than silently dropping them.
+     * The movement lists describe the same deals the headline tiles count: open
+     * pipeline inside the analysis window, excluding deals the dashboard
+     * deliberately does not count. Without this a deal closing in a year the
+     * tiles ignore would appear as a win beside a "no change" headline.
+     *
+     * A deal is in scope if it counted in EITHER report, so one that slipped
+     * out of the window stays visible. But a deal that is *excluded* on either
+     * side is out of scope entirely — otherwise an excluded-owner deal moving
+     * Proposal -> Awarded, which is progress, would be reported as a loss.
      */
-    function inWindow(o, snap) {
-      return o && (o.year === snap.currentYear || o.year === snap.nextYear);
+    function counted(o, snap) {
+      return !!o && !o.excluded &&
+        (o.year === snap.currentYear || o.year === snap.nextYear);
+    }
+    function eitherExcluded(p, c) {
+      return (p && p.excluded) || (c && c.excluded);
     }
 
     m.pairs.forEach(function (pair) {
       var p = pair.prev, c = pair.curr;
       matchedBy[pair.via]++;
-      if (!inWindow(p, prev) && !inWindow(c, curr)) {
+      if (eitherExcluded(p, c) || (!counted(p, prev) && !counted(c, curr))) {
         // Only count it as skipped if it would otherwise have been reported.
-        if ((!p.closed && c.closed) || (!c.closed && p.name !== c.name)) outOfWindow++;
+        if ((!p.closed && c.closed) || (!c.closed && p.name !== c.name)) notShown++;
         return;
       }
       // Open before, closed now — the movement the report should call out.
@@ -367,12 +380,12 @@
     // window the tiles describe.
     var added = m.unmatchedCurr.filter(function (c) {
       if (c.closed) return false;
-      if (!inWindow(c, curr)) { outOfWindow++; return false; }
+      if (!counted(c, curr)) { notShown++; return false; }
       return true;
     });
     var removed = m.unmatchedPrev.filter(function (p) {
       if (p.closed) return false;
-      if (!inWindow(p, prev)) { outOfWindow++; return false; }
+      if (!counted(p, prev)) { notShown++; return false; }
       return true;
     });
 
@@ -400,9 +413,10 @@
       // than quietly showing a different slice from the rest of the dashboard.
       filteredBy: usable,
       unsupportedFilters: unsupported,
-      // Movements on deals that sat outside the analysis window in both
-      // reports, and so are not shown — reported rather than silently dropped.
-      outOfWindow: outOfWindow,
+      // Movements on deals the dashboard does not count — outside the analysis
+      // window, or on a deliberately excluded stage. Reported as a number
+      // rather than silently dropped.
+      notShown: notShown,
       windowYears: [curr.currentYear, curr.nextYear],
       closedWon: closedWon,
       closedLost: closedLost,

@@ -610,6 +610,39 @@ eq('stale baseline tiles ignore suppressed deals', staleDiff.count.delta, 0);
 approx('stale baseline "was" value excludes suppressed deals',
    staleDiff.total.prev, res.years[2026].total + res.years[2027].total);
 
+// AWARDED_EXCLUDE_OWNERS drops one stage, not the person: an excluded owner's
+// other stages still count in the headline pipeline.
+const finRow = (name, stage, amount) => Object.assign(
+  synthRow('Finlay Anderson', stage, amount, '12/06/2026'), { 'Opportunity Name': name });
+const finAll = table.rows.concat([
+  finRow('Fin Awarded', 'Awarded', '£500,000'),
+  finRow('Fin Proposal', 'Proposal/Price Quote', '£400,000'),
+  finRow('Fin Discovery', 'Discovery', '£300,000')
+]);
+const withFin = PA.analytics.analyze(finAll, mapping, { currentYear: 2026, includeClosed: false });
+approx('excluded owner: awarded dropped, other stages counted',
+   withFin.years[2026].total, res.years[2026].total + 700000);
+
+// A deal moving Proposal -> Awarded is progress. Crossing into the excluded
+// set must not be reported as the deal vanishing from the report.
+const finPrev = PA.compare.buildSnapshot(
+  table.rows.concat([finRow('Fin Big Deal', 'Proposal/Price Quote', '£400,000')]),
+  mapping, { currentYear: 2026, dayFirst: true, reportDate: '2026-06-12' });
+const finCurr = PA.compare.buildSnapshot(
+  table.rows.concat([finRow('Fin Big Deal', 'Awarded', '£400,000')]),
+  mapping, { currentYear: 2026, dayFirst: true, reportDate: '2026-08-02' });
+const finDiff = PA.compare.diffSnapshots(finPrev, finCurr, {});
+eq('advancing into an excluded stage is not a loss', finDiff.removed.length, 0);
+eq('advancing into an excluded stage is not a new deal', finDiff.added.length, 0);
+eq('the skipped movement is still reported', finDiff.notShown, 0);
+// The tiles still reflect the dashboard's own rule: it counted last time, not now.
+approx('tiles follow the dashboard rule', finDiff.total.delta, -400000);
+// Excluded deals are kept in the snapshot but flagged, and never counted.
+eq('excluded deal is retained in the snapshot',
+   finCurr.opps.some(o => o.name === 'Fin Big Deal' && o.excluded === true), true);
+approx('excluded deal adds nothing to snapshot totals',
+   finCurr.total, res.years[2026].total + res.years[2027].total);
+
 // An override list keeps the rule configurable.
 eq('override suppresses someone else',
    PA.analytics.buildRecords(table.rows, mapping, { suppressOwners: ['jane smith'] })
@@ -841,13 +874,13 @@ oow.find(r => r['Opportunity Name'] === 'Stale Lead 2025')['Stage'] = 'Closed Wo
 const oowDiff = PA.compare.diffSnapshots(
   prevSnap, PA.compare.buildSnapshot(oow, mapping, snapOpts('2026-08-02')), {});
 eq('out-of-window win is not listed', oowDiff.closedWon.length, 0);
-eq('out-of-window movement is reported, not hidden', oowDiff.outOfWindow, 1);
+eq('out-of-window movement is reported, not hidden', oowDiff.notShown, 1);
 eq('out-of-window win leaves the tiles unchanged', oowDiff.count.delta, 0);
 eq('window years surfaced', oowDiff.windowYears.join('/'), '2026/2027');
 
 // An in-window win is still reported, and moves the tiles.
 eq('in-window win is still listed', wonDiff.closedWon.length, 1);
-eq('in-window win has no out-of-window noise', wonDiff.outOfWindow, 0);
+eq('in-window win has no out-of-window noise', wonDiff.notShown, 0);
 
 // A deal that slipped out of the window stays visible, because it was in the
 // window in the previous report.
@@ -864,7 +897,7 @@ farOut.push(synthRow('Nia Patel', 'Discovery', '£90,000', '10/10/2029'));
 const farDiff = PA.compare.diffSnapshots(
   prevSnap, PA.compare.buildSnapshot(farOut, mapping, snapOpts('2026-08-02')), {});
 eq('out-of-window new deal is not listed as new', farDiff.added.length, 0);
-eq('out-of-window new deal is reported as skipped', farDiff.outOfWindow, 1);
+eq('out-of-window new deal is reported as skipped', farDiff.notShown, 1);
 
 // Matching by Opportunity ID survives a rename that name-matching would miss.
 const idMapping = Object.assign({}, mapping, { oppId: 'Opportunity ID' });

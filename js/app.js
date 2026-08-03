@@ -1113,12 +1113,13 @@
         escapeHtml(filterSummaryText()) + '</strong> — both reports sliced the same way, ' +
         'so these figures line up with the rest of the dashboard.</p>' + note;
     }
-    if (d.outOfWindow) {
-      note += '<p class="compare-matchnote">' + d.outOfWindow + ' movement' +
-        (d.outOfWindow === 1 ? '' : 's') + ' on deals closing outside ' +
-        escapeHtml(String(d.windowYears[0])) + '/' + escapeHtml(String(d.windowYears[1])) +
-        ' ' + (d.outOfWindow === 1 ? 'is' : 'are') + ' not shown — those deals are not ' +
-        'counted in the figures above either.</p>';
+    if (d.notShown) {
+      note += '<p class="compare-matchnote">' + d.notShown + ' movement' +
+        (d.notShown === 1 ? '' : 's') + ' on deals this dashboard does not count — ' +
+        'closing outside ' + escapeHtml(String(d.windowYears[0])) + '/' +
+        escapeHtml(String(d.windowYears[1])) + ', or on an excluded stage — ' +
+        (d.notShown === 1 ? 'is' : 'are') + ' not shown, for the same reason ' +
+        'they are absent from the figures above.</p>';
     }
     if ((d.unsupportedFilters || []).length) {
       var labels = d.unsupportedFilters.map(function (k) {
