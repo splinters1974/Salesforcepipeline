@@ -1127,6 +1127,18 @@
         dqChip(skipped, 'skipped', skipped ? 'bad' : '') +
         (excluded ? dqChip(excluded, 'excluded rows') : '') +
       '</div>' +
+      /*
+       * Every owner rule — suppression, revenue-only, Grid Scale — keys off the
+       * Owner column. Owner is an optional mapping, so if a future export
+       * renames it and auto-detection misses it, all of those rules stop
+       * applying and the pipeline silently inflates by everyone who should have
+       * been excluded. Say so loudly rather than reporting a wrong total.
+       */
+      (!state.mapping.owner ? '<div class="compare-warning"><strong>No Owner column is mapped, ' +
+        'so no owner rules are being applied.</strong> Opportunities owned by ' +
+        escapeHtml(PA.analytics.SUPPRESSED_OWNERS.map(titleCaseName).join(', ')) +
+        ' are being counted in every figure, and the Grid Scale portfolio is empty. ' +
+        'Map an <strong>Owner</strong> column above to restore them.</div>' : '') +
       // Never let people vanish from a report without saying so.
       (suppressed ? '<p class="muted">' + suppressed + ' row' + (suppressed === 1 ? '' : 's') +
         ' excluded from the pipeline figures on this page: opportunities owned by ' +
