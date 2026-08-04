@@ -222,9 +222,18 @@ views only: **Won revenue by owner** and **Awarded opportunities**.
 none of his pipeline reaches the total, the forecast, or what was added and
 removed since the previous report.
 
-The Data Quality card counts his rows in the excluded total and states the
-exception, so the Won revenue figure never looks like it contradicts the
-exclusion.
+Because those rows are counted in the revenue views but nowhere else, the same
+word can legitimately carry two different totals — the year column's *Awarded*
+stage row and the Insights *Awarded opportunities* list will differ by exactly
+his awarded work. Both revenue views are therefore labelled where the number
+appears:
+
+> *includes Finlay/BCL revenue, which is excluded from pipeline figures*
+
+The label shows on **Won revenue by owner** and **Awarded opportunities**, on
+screen and in the PDF and CSV, and only when those owners actually contributed —
+there is no note when there is no difference to explain. The Data Quality card
+also counts his rows in the excluded total and states the exception.
 
 Because he is fully suppressed from the rest, he does not affect the **win
 rate** either — that stays representative of the reporting team.

@@ -26,6 +26,14 @@
     return d.getUTCDate() + ' ' + PA.analytics.MONTH_LABELS[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
   }
 
+  // Same caveat the dashboard shows, so a shared report explains the gap too.
+  var REVENUE_ONLY_NOTE =
+    'includes Finlay/BCL revenue, which is excluded from pipeline figures';
+  function revenueOnlyNote(amount) {
+    return amount ? { text: REVENUE_ONLY_NOTE, style: 'muted', italics: true,
+                      margin: [0, 0, 0, 4] } : null;
+  }
+
   function image(dataUrl, width) {
     return dataUrl
       ? { image: dataUrl, width: width, margin: [0, 4, 0, 10] }
@@ -571,6 +579,7 @@
           { width: '*', stack: [
             { text: 'Won revenue ' + cur + ' by owner', style: 'h3' },
             { text: 'Total won: ' + money(ins.wonTotal) + ' · ' + ins.wonCount + ' deals', style: 'muted' },
+            revenueOnlyNote(ins.revenueOnlyWon),
             image(imgs.won, 230)
           ] },
           { width: '*', stack: [
@@ -581,6 +590,7 @@
         columnGap: 18
       },
       { text: 'Awarded opportunities — ' + cur, style: 'h3' },
+      revenueOnlyNote(ins.revenueOnlyAwarded),
       awardedTable(ins.awarded || [], ins.awardedTotal || 0),
       { text: 'Top 10 Opportunities for this Year', style: 'h3' },
       proposedTable(p.proposed || [])

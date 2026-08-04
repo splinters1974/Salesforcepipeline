@@ -685,6 +685,16 @@
     var revenueRecs = applyFilters(revenueOnlyRecords(rows, mapping, options), options.filters);
     var revenueViewRecs = recs.concat(revenueRecs);
 
+    // How much of each revenue view actually comes from those owners, so the
+    // cards can label the difference only when there is a difference.
+    var revenueOnlyWon = 0, revenueOnlyAwarded = 0;
+    revenueRecs.forEach(function (r) {
+      if (r.year !== currentYear) return;
+      var st = String(r.stage).toLowerCase();
+      if (st.indexOf('won') !== -1) revenueOnlyWon += r.amount;
+      else if (st.indexOf('award') !== -1) revenueOnlyAwarded += r.amount;
+    });
+
     // --- Average age of open opportunities (created -> today) ---
     var ageSum = 0, ageCount = 0;
     recs.forEach(function (r) {
@@ -774,6 +784,8 @@
       avgOpenAgeDays: avgOpenAgeDays, openAgeCount: ageCount, hasCreated: !!mapping.created,
       wonByOwner: wonByOwner, wonTotal: wonTotal, wonCount: wonCount,
       awarded: awarded, awardedTotal: awardedTotal,
+      revenueOnlyWon: revenueOnlyWon, revenueOnlyAwarded: revenueOnlyAwarded,
+      revenueOnlyOwners: (options.revenueOnlyOwners || REVENUE_ONLY_OWNERS).slice(),
       leadSources: leadSources, hasLeadSource: !!mapping.leadSource,
       topProposed: topProposed, allOpps: allOpps
     };

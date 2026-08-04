@@ -980,6 +980,20 @@
   }
 
   // Pipeline Insights card: avg open age, won-by-owner, lead source, top 10 proposed.
+  /*
+   * The revenue views deliberately include owners who are excluded from every
+   * pipeline figure, so the same word ("awarded", "won") legitimately carries
+   * different totals in two places. Say so where the number appears — the
+   * Data Quality note is a different, collapsed card, and by the time someone
+   * spots the gap they are already doubting the report.
+   */
+  var REVENUE_ONLY_NOTE =
+    'includes Finlay/BCL revenue, which is excluded from pipeline figures';
+
+  function revenueOnlyNote(amount) {
+    return amount ? '<span class="revenue-note">' + REVENUE_ONLY_NOTE + '</span>' : '';
+  }
+
   function renderInsights() {
     if (!state.results || !state.table || !state.mapping) return;
     var ins = currentInsights();
@@ -998,10 +1012,11 @@
 
     // Won revenue by owner (current year, closed won)
     $('wonYearLabel').textContent = ins.currentYear;
-    $('wonTotalLabel').textContent = ins.wonCount
+    $('wonTotalLabel').innerHTML = (ins.wonCount
       ? 'Total won: ' + currency(ins.wonTotal) + ' · ' + ins.wonCount +
         (ins.wonCount === 1 ? ' deal' : ' deals')
-      : 'No closed-won deals in ' + ins.currentYear + '.';
+      : 'No closed-won deals in ' + ins.currentYear + '.') +
+      revenueOnlyNote(ins.revenueOnlyWon);
     PA.charts.pieChart('wonChart',
       ins.wonByOwner.map(function (o) { return o.key; }),
       ins.wonByOwner.map(function (o) { return o.total; }),
@@ -1021,6 +1036,7 @@
 
     // Awarded opportunities (current+next year) — name, value, owner + total.
     $('awardedYearLabel').textContent = ins.currentYear;
+    $('awardedNote').innerHTML = revenueOnlyNote(ins.revenueOnlyAwarded);
     var awHead = '<thead><tr><th>Opportunity</th><th>Value</th><th>Owner</th></tr></thead>';
     var awBody = ins.awarded.map(function (a) {
       return '<tr>' +

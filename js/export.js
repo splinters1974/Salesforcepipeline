@@ -112,10 +112,16 @@
         insights.wonCount + ' deals']);
       rows.push([]);
 
+      if (insights.revenueOnlyWon) {
+        rows.push(['Note', 'includes Finlay/BCL revenue, which is excluded from pipeline figures']);
+      }
       rows.push(['Won by owner', 'Amount', 'Count']);
       insights.wonByOwner.forEach(function (o) { rows.push([o.key, num(o.total), o.count]); });
       rows.push([]);
 
+      if (insights.revenueOnlyAwarded) {
+        rows.push(['Note', 'includes Finlay/BCL revenue, which is excluded from pipeline figures']);
+      }
       rows.push(['Awarded opportunities', 'Value', 'Owner']);
       (insights.awarded || []).forEach(function (a) { rows.push([a.name, num(a.amount), a.owner]); });
       rows.push(['Total awarded', num(insights.awardedTotal || 0), (insights.awarded || []).length]);

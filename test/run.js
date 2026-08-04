@@ -152,6 +152,12 @@ eq('revenue-only owner absent from the filter list',
    PA.analytics.distinctFilterValues(finRows, mapping, { currentYear: 2026 })
      .owner.indexOf('Finlay Anderson'), -1);
 
+// The revenue views must be labelled so the gap against the pipeline figures
+// is explained where the number appears, not only in Data Quality.
+const NOTE = 'includes Finlay/BCL revenue, which is excluded from pipeline figures';
+approx('revenue-only won is reported for labelling', finIns.revenueOnlyWon, 70000);
+approx('revenue-only awarded is reported for labelling', finIns.revenueOnlyAwarded, 50000);
+
 // The revenue-only record set is exactly his won + awarded rows.
 const finRev = PA.analytics.revenueOnlyRecords(finRows, mapping, {});
 eq('revenue-only set holds just won and awarded', finRev.length, 2);
@@ -524,6 +530,27 @@ has('awarded section', 'Awarded opportunities,Value,Owner');
 has('awarded total row', 'Total awarded,145500,2');
 has('lead source section', 'Lead source,Count,%');
 has('top proposed section', 'Top 10 Opportunities for this Year,Value,Close date,Rating %,Next step');
+
+const noteCsv = PA.export.buildSummaryCsv(res, health, finIns, { generated: 'x' });
+eq('csv carries the note', noteCsv.indexOf(NOTE) !== -1, true);
+eq('csv carries it against both views', noteCsv.split(NOTE).length - 1, 2);
+const noteDoc = JSON.stringify(PA.pdf.buildDocDefinition({
+  results: res, health: health, insights: finIns, proposed: [], images: {}, meta: {}
+}).content);
+eq('pdf carries the note', noteDoc.indexOf(NOTE) !== -1, true);
+eq('pdf carries it against both views', noteDoc.split(NOTE).length - 1, 2);
+
+// With nobody revenue-only, the note must not appear at all — it would be
+// telling the reader about a difference that does not exist.
+const plainIns = PA.analytics.insightMetrics(table.rows, mapping, finToday, {});
+eq('no revenue-only rows means no won note', plainIns.revenueOnlyWon, 0);
+eq('no revenue-only rows means no awarded note', plainIns.revenueOnlyAwarded, 0);
+eq('csv omits the note when it does not apply',
+   PA.export.buildSummaryCsv(res, health, plainIns, { generated: 'x' }).indexOf(NOTE), -1);
+eq('pdf omits the note when it does not apply',
+   JSON.stringify(PA.pdf.buildDocDefinition({
+     results: res, health: health, insights: plainIns, proposed: [], images: {}, meta: {}
+   }).content).indexOf(NOTE), -1);
 
 // The CSV must use the curated list — manual removals, additions and running
 // order — rather than the raw auto-ranked one.

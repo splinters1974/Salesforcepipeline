@@ -513,6 +513,21 @@ main { padding: 24px 0 48px; }
   .compare-upload { margin-left: 0; }
 }
 
+/* Explains why a revenue figure is larger than the matching pipeline one */
+.revenue-note {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #fdf1de;
+  color: var(--amber);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  vertical-align: middle;
+}
+
 /* ---- Grid Scale projects card (ring-fenced) ---- */
 .gridscale-card h2::before {
   content: "";
